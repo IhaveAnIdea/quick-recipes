@@ -1323,7 +1323,7 @@
         // builtVectors loaded lazily via ensureEmbeddings()
       } else {
         // ── DESKTOP: use cached fetch with progress tracking ──
-        const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}_${builtMeta.count}`, 12, 30);
+        const recipesBuf = await fetchOrCache(`assets/recipes.json?${cacheBust}`, `recipes_${builtMeta.buildId}_${builtMeta.count}`, 12, 30);
         builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
         if (builtRecipes.length !== builtMeta.count) {
           console.warn(`[init] recipes count mismatch: got ${builtRecipes.length}, expected ${builtMeta.count}`);
@@ -1336,7 +1336,7 @@
         setProgress(45);
         await yieldToBrowser();
 
-        const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}_${builtMeta.count}`, 45, 50);
+        const embBuf = await fetchOrCache(`assets/embeddings.bin?${cacheBust}`, `emb_${builtMeta.buildId}_${builtMeta.count}`, 45, 50);
         if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
           throw new Error("Embeddings file too small or missing.");
         }
@@ -1927,21 +1927,10 @@
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  // On mobile, detect crash loops: if we set a flag before init and it's still
-  // there on next load, the page crashed during init. Skip auto-load to break
-  // the cycle and let the user trigger it manually via search.
+  // On mobile, do NOT auto-load. User triggers load by searching. This avoids
+  // the init→OOM→reload loop on iOS when HTTP cache serves stale large files.
   if (isMobile) {
-    const CRASH_KEY = "qr_init_started";
-    const crashed = sessionStorage.getItem(CRASH_KEY);
-    if (crashed) {
-      console.warn("[startup] previous init may have crashed — skipping auto-load. User search will trigger load.");
-      sessionStorage.removeItem(CRASH_KEY);
-    } else {
-      setTimeout(() => {
-        sessionStorage.setItem(CRASH_KEY, "1");
-        initDataset().finally(() => sessionStorage.removeItem(CRASH_KEY));
-      }, 800);
-    }
+    setStatus("Ready", "Tap search to load 3,895 recipes.");
   } else {
     initDataset();
   }
