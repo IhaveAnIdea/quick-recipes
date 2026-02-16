@@ -485,17 +485,17 @@
   <nav class="navbar">
     <div class="nav-brand">Quick Recipes</div>
     <div class="nav-tabs">
-      <button class="nav-tab active" data-tab="Search">Search</button>
-      <button class="nav-tab" data-tab="MyRecipes">My Recipes</button>
-      <button class="nav-tab" data-tab="Planner">Planner</button>
-      <button class="nav-tab" data-tab="Settings">Settings</button>
+      <button type="button" class="nav-tab active" data-tab="Search">Search</button>
+      <button type="button" class="nav-tab" data-tab="MyRecipes">My Recipes</button>
+      <button type="button" class="nav-tab" data-tab="Planner">Planner</button>
+      <button type="button" class="nav-tab" data-tab="Settings">Settings</button>
     </div>
     <div class="nav-actions">
       <div class="status-dot" id="statusDot" title="Dataset not loaded"></div>
       <a href="https://buymeacoffee.com/craigwinter" target="_blank" rel="noopener" class="bmac-link" title="Buy me a coffee">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
       </a>
-      <button class="icon-btn" id="btnTheme" title="Toggle theme">&#9789;</button>
+      <button type="button" class="icon-btn" id="btnTheme" title="Toggle theme">&#9789;</button>
     </div>
   </nav>
 
@@ -509,10 +509,10 @@
         <p>Search <span id="countText">3,895</span> recipes with full instructions.</p>
       </div>
 
-      <div class="search-box">
+      <form class="search-box" action="javascript:void(0)" onsubmit="return false" id="searchForm">
         <input id="q" type="search" placeholder='Try "spicy chicken", "vegan dessert", "quick pasta no dairy"' autocomplete="off" />
-        <button class="btn btn-primary" id="btnSearch">Search</button>
-      </div>
+        <button type="button" class="btn btn-primary" id="btnSearch">Search</button>
+      </form>
 
       <div class="status-bar" id="statusBar">
         <div class="status-dot" id="statusDot2"></div>
@@ -570,8 +570,8 @@
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
           <h2 class="result-title" id="rTitle" style="flex:1; min-width:0;"></h2>
           <div style="display:flex; gap:6px;">
-            <button class="btn btn-ghost btn-sm" id="btnPrev" title="Show previous match">&larr; Prev</button>
-            <button class="btn btn-ghost btn-sm" id="btnNext" title="Show next match">Next &rarr;</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnPrev" title="Show previous match">&larr; Prev</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnNext" title="Show next match">Next &rarr;</button>
           </div>
         </div>
         <div class="result-meta">
@@ -589,8 +589,8 @@
         <div id="rInstructions"></div>
 
         <div class="result-actions">
-          <button class="btn btn-primary" id="btnAddToPlan">Add to Plan</button>
-          <button class="btn" id="btnSaveAsMine">Save to My Recipes</button>
+          <button type="button" class="btn btn-primary" id="btnAddToPlan">Add to Plan</button>
+          <button type="button" class="btn" id="btnSaveAsMine">Save to My Recipes</button>
         </div>
       </div>
     </div>
@@ -607,10 +607,10 @@
           <div class="card-sub">Private to this browser. Create, edit, export.</div>
 
           <div class="row">
-            <button class="btn btn-primary" id="btnNewMine">New Recipe</button>
-            <button class="btn btn-sm" id="btnExportMineCSV">CSV</button>
-            <button class="btn btn-sm" id="btnExportMinePDF">PDF</button>
-            <button class="btn btn-sm" id="btnExportMineDOCX">DOCX</button>
+            <button type="button" class="btn btn-primary" id="btnNewMine">New Recipe</button>
+            <button type="button" class="btn btn-sm" id="btnExportMineCSV">CSV</button>
+            <button type="button" class="btn btn-sm" id="btnExportMinePDF">PDF</button>
+            <button type="button" class="btn btn-sm" id="btnExportMineDOCX">DOCX</button>
           </div>
           <input id="mineSearch" placeholder="Search my recipes..." class="mt-12" />
           <div class="list" id="mineList"></div>
@@ -621,7 +621,7 @@
           <div class="card hidden" id="minePreviewCard">
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
               <h2 id="mpTitle" style="margin:0; flex:1; min-width:0;"></h2>
-              <button class="btn btn-ghost btn-sm" id="btnMineEdit">Edit</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnMineEdit">Edit</button>
             </div>
             <div class="tags mt-12" id="mpTags"></div>
             <div class="section-heading">Ingredients</div>
@@ -646,9 +646,9 @@
             <textarea id="mSteps" class="mt-12" placeholder="Instructions / Steps"></textarea>
             <textarea id="mNotes" class="mt-12" placeholder="Notes (optional)"></textarea>
             <div class="row mt-12">
-              <button class="btn btn-primary" id="btnSaveMine">Save</button>
-              <button class="btn btn-danger btn-sm" id="btnDeleteMine">Delete</button>
-              <button class="btn btn-ghost btn-sm" id="btnClearMine">Clear</button>
+              <button type="button" class="btn btn-primary" id="btnSaveMine">Save</button>
+              <button type="button" class="btn btn-danger btn-sm" id="btnDeleteMine">Delete</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnClearMine">Clear</button>
             </div>
           </div>
         </div>
@@ -677,12 +677,12 @@
           </div>
           <div class="row mt-12">
             <input id="pPick" placeholder="Type a recipe title (from Search or My Recipes)" />
-            <button class="btn btn-primary shrink" id="btnPlanAdd">Add</button>
+            <button type="button" class="btn btn-primary shrink" id="btnPlanAdd">Add</button>
           </div>
           <div class="row mt-12">
-            <button class="btn btn-sm" id="btnPlanExportCSV">CSV</button>
-            <button class="btn btn-sm" id="btnPlanExportPDF">PDF</button>
-            <button class="btn btn-sm" id="btnPlanExportDOCX">DOCX</button>
+            <button type="button" class="btn btn-sm" id="btnPlanExportCSV">CSV</button>
+            <button type="button" class="btn btn-sm" id="btnPlanExportPDF">PDF</button>
+            <button type="button" class="btn btn-sm" id="btnPlanExportDOCX">DOCX</button>
           </div>
           <div class="status-bar mt-12"><span id="planStatus">Ready.</span></div>
           <div class="list" id="planList"></div>
@@ -694,16 +694,16 @@
 
           <div class="row">
             <input id="shopNew" placeholder="Add item, e.g. 2 lemons" />
-            <button class="btn btn-primary shrink" id="btnShopAdd">Add</button>
+            <button type="button" class="btn btn-primary shrink" id="btnShopAdd">Add</button>
           </div>
           <div class="row mt-12">
-            <button class="btn btn-sm" id="btnShopExportCSV">CSV</button>
-            <button class="btn btn-sm" id="btnShopExportPDF">PDF</button>
-            <button class="btn btn-sm" id="btnShopExportDOCX">DOCX</button>
-            <button class="btn btn-ghost btn-sm" id="btnShopClearDone">Clear checked</button>
-            <button class="btn btn-danger btn-sm" id="btnShopWipe">Wipe</button>
+            <button type="button" class="btn btn-sm" id="btnShopExportCSV">CSV</button>
+            <button type="button" class="btn btn-sm" id="btnShopExportPDF">PDF</button>
+            <button type="button" class="btn btn-sm" id="btnShopExportDOCX">DOCX</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnShopClearDone">Clear checked</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btnShopWipe">Wipe</button>
           </div>
-          <button class="btn btn-warn btn-sm mt-12" id="btnRebuildShop">Rebuild from plan</button>
+          <button type="button" class="btn btn-warn btn-sm mt-12" id="btnRebuildShop">Rebuild from plan</button>
           <div class="list" id="shopList"></div>
         </div>
       </div>
@@ -719,18 +719,18 @@
         <h2>Data</h2>
         <div class="card-sub">All personal data stays in your browser (IndexedDB). Nothing is sent to a server.</div>
         <div class="row">
-          <button class="btn btn-primary" id="btnExportAll">Export ALL (JSON)</button>
-          <button class="btn" id="btnImportAll">Import (JSON)</button>
+          <button type="button" class="btn btn-primary" id="btnExportAll">Export ALL (JSON)</button>
+          <button type="button" class="btn" id="btnImportAll">Import (JSON)</button>
           <input id="filePick" type="file" accept="application/json" style="display:none" />
         </div>
         <div class="row mt-16">
-          <button class="btn btn-danger" id="btnWipeUserData">Wipe all user data</button>
+          <button type="button" class="btn btn-danger" id="btnWipeUserData">Wipe all user data</button>
         </div>
       </div>
       <div class="card">
         <h2>About</h2>
         <div class="small">
-          <p>Semantic search over <b>3,895 recipes</b> (all with full cooking instructions) using prebuilt AI embeddings (Xenova/all-MiniLM-L6-v2). Runs entirely in your browser — no server needed.</p>
+          <p>Semantic search over <b>3,895 recipes</b> (all with full cooking instructions) using prebuilt AI embeddings (Xenova/paraphrase-MiniLM-L3-v2). Runs entirely in your browser — no server needed.</p>
           <p style="margin-top:12px">
             <a href="https://buymeacoffee.com/craigwinter" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;background:#FFDD00;color:#000;font-weight:700;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:14px;">
               <svg width="20" height="20" viewBox="0 0 884 1279" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M792 74c-17-4-45 0-45 0s-8-53-82-72C590-16 550 25 540 36c-8-4-36-14-80-14s-72 10-80 14C370 25 330-16 255 2c-74 19-82 72-82 72s-28-4-45 0-38 37-30 53 45 36 45 36-5 17-5 40v106c0 130 85 229 197 271v249H337c-25 0-69 8-69 72v234c0 18 14 34 32 34h284c18 0 32-16 32-34V619c0-64-44-72-69-72h-98V298c112-42 197-141 197-271V0s37-20 45-36 -13-49-30-53z" fill="#000"/></svg>
@@ -770,11 +770,13 @@
     console.error("unhandledrejection", e.reason);
     setStatus("Error", String(e.reason?.message || e.reason || "Unknown"));
     setProgress(0);
+    e.preventDefault();
   });
   window.addEventListener("error", e => {
     console.error("error", e.error || e.message);
     setStatus("Error", String(e.error?.message || e.message || "Unknown"));
     setProgress(0);
+    e.preventDefault();
   });
 
   /* ── Theme ─────────────────────────────────── */
@@ -967,18 +969,32 @@
   ══════════════════════════════════════════════ */
   let extractor = null;
   let embedderFailed = false;
-  const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
+  let embedWorker = null;
+  let embedWorkerReady = false;
+  const MODEL_ID = "Xenova/paraphrase-MiniLM-L3-v2";
 
-  // Mobile: WASM + q4 model (~11 MB) to stay within iOS memory budget.
-  // Desktop: prefer WebGPU when available, full fp32 model (~23 MB).
+  // Mobile: Web Worker + L3 q4 (~5 MB) — isolates WASM from main thread to avoid iOS jetsam.
+  // Desktop: main thread, WebGPU when available.
   const useDevice = (!isMobile && navigator.gpu) ? "webgpu" : "wasm";
   const useDtype  = isMobile ? "q4" : "fp32";
+
+  function getEmbedWorker() {
+    if (!embedWorker && isMobile) {
+      try {
+        embedWorker = new Worker(new URL("embed-worker.js", location.href).href, { type: "module" });
+        embedWorker.onerror = (e) => { console.error("[embed-worker] error", e); };
+      } catch (e) {
+        console.warn("[embed-worker] Worker failed, falling back to main thread:", e);
+      }
+    }
+    return embedWorker;
+  }
 
   async function loadEmbedder() {
     if (extractor) return;
     if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
 
-    const sizeHint = isMobile ? "~11 MB" : "~23 MB";
+    const sizeHint = isMobile ? "~5 MB (worker)" : "~12 MB";
     setStatus("Loading AI model...", `First time downloads ${sizeHint} model (cached after).`);
     setProgress(8);
 
@@ -1023,6 +1039,22 @@
   }
 
   async function embedText(text) {
+    // Mobile: use worker to isolate WASM from main thread
+    if (isMobile && getEmbedWorker()) {
+      return new Promise((resolve, reject) => {
+        const id = "e_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+        const handler = (e) => {
+          const d = e.data;
+          if (d?.type !== "embed" || d?.id !== id) return;
+          embedWorker.removeEventListener("message", handler);
+          if (d.error) reject(new Error(d.error));
+          else resolve(d.vec);
+        };
+        embedWorker.addEventListener("message", handler);
+        embedWorker.postMessage({ type: "embed", id, text });
+      });
+    }
+
     await loadEmbedder();
     const dim = builtMeta?.dim || 384;
     const out = await extractor(text, { pooling: "mean", normalize: true });
@@ -1481,6 +1513,10 @@
     const query = $("q").value.trim();
     if (!query) { setStatus("Ready", "Type what you want to cook."); return; }
 
+    // On mobile: yield to browser before heavy work — lets iOS process the tap
+    // and avoids race conditions that can trigger reload/jetsam.
+    if (isMobile) await new Promise(r => setTimeout(r, 50));
+
     // If dataset not loaded yet, try to load it first
     if (!builtRecipes.length) {
       await initDataset();
@@ -1570,7 +1606,8 @@
   }
 
   $("btnSearch").addEventListener("click", doSearch);
-  $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+  $("q").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
+  $("searchForm")?.addEventListener("submit", e => { e.preventDefault(); doSearch(); });
   $("btnNext").addEventListener("click", showNext);
   $("btnPrev").addEventListener("click", showPrev);
 
@@ -1668,7 +1705,7 @@
       const left = document.createElement("div");
       left.innerHTML = `<h3>${esc(p.title)}</h3><div class="meta">${esc(p.date)} &bull; ${esc(p.meal)} &bull; ${p.servings} servings</div>`;
       const btns = document.createElement("div"); btns.style.display="flex"; btns.style.gap="6px";
-      const bDel = document.createElement("button"); bDel.className="btn btn-danger btn-sm"; bDel.textContent="Remove";
+      const bDel = document.createElement("button"); bDel.type="button"; bDel.className="btn btn-danger btn-sm"; bDel.textContent="Remove";
       bDel.onclick = async () => { await idbDel(STORE_PLAN, p.id); planItems = planItems.filter(x=>x.id!==p.id); renderPlanList(); await rebuildShoppingList(); };
       btns.appendChild(bDel);
       el.appendChild(left); el.appendChild(btns);
@@ -1719,9 +1756,9 @@
       const m = document.createElement("div"); m.className="small"; m.textContent = it.origin==="plan" ? `From plan (${it.sources?.length||1} recipe(s))` : "Manual";
       txt.appendChild(t); txt.appendChild(m);
       const actions = document.createElement("div"); actions.style.display="flex"; actions.style.gap="4px";
-      const bEdit = document.createElement("button"); bEdit.className="btn btn-ghost btn-sm"; bEdit.textContent="Edit";
+      const bEdit = document.createElement("button"); bEdit.type="button"; bEdit.className="btn btn-ghost btn-sm"; bEdit.textContent="Edit";
       bEdit.onclick = async () => { const v=prompt("Edit:",it.text); if(v===null) return; it.text=normalizeIngredientLine(v); await idbPut(STORE_SHOP, it); renderShopList(); };
-      const bDel = document.createElement("button"); bDel.className="btn btn-danger btn-sm"; bDel.textContent="Del";
+      const bDel = document.createElement("button"); bDel.type="button"; bDel.className="btn btn-danger btn-sm"; bDel.textContent="Del";
       bDel.onclick = async () => { await idbDel(STORE_SHOP, it.id); shopItems=shopItems.filter(x=>x.id!==it.id); renderShopList(); };
       actions.appendChild(bEdit); actions.appendChild(bDel);
       row.appendChild(cb); row.appendChild(txt); row.appendChild(actions);
@@ -2075,9 +2112,10 @@
   if (isMobile) {
     setStatus("Ready", "Tap search to load 3,895 recipes.");
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden && builtVectors) {
+      if (document.hidden) {
         builtVectors = null;
         extractor = null;
+        if (embedWorker) { embedWorker.terminate(); embedWorker = null; }
       }
     });
   } else {

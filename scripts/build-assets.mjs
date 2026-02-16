@@ -9,8 +9,8 @@ import { pipeline, env } from "@huggingface/transformers";
 const OUT_DIR = "assets";
 const BUILD_ID = new Date().toISOString().slice(0, 10);
 
-// Embedding model
-const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
+// Embedding model — L3 (~5 MB q4) for mobile-friendly semantic search
+const MODEL_ID = "Xenova/paraphrase-MiniLM-L3-v2";
 const DIM = 384;
 
 // Datasets (redistributable with attribution)
