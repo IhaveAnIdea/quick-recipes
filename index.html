@@ -469,9 +469,10 @@
       <div class="status-bar" id="statusBar">
         <div class="status-dot" id="statusDot2"></div>
         <div style="flex:1">
-          <div id="statusText"><b>Loading...</b></div>
-          <div class="small" id="statusSub">Downloading recipe data (one-time, cached after).</div>
+          <div id="statusText"><b>Ready to load</b></div>
+          <div class="small" id="statusSub">Tap "Load Recipes" to download the dataset (one-time, ~46 MB).</div>
         </div>
+        <button class="btn btn-primary btn-sm" id="btnLoad" style="flex-shrink:0">Load Recipes</button>
       </div>
       <div class="progress-wrap" id="progressWrap">
         <div class="progress-bar" id="bar"></div>
@@ -807,12 +808,16 @@
     });
   }
   async function assetPut(key, val) {
-    const db = await openAssetDB();
-    return new Promise((r, j) => { const tx = db.transaction(ASSET_STORE,"readwrite"); tx.objectStore(ASSET_STORE).put(val,key); tx.oncomplete=()=>r(true); tx.onerror=()=>j(tx.error); });
+    try {
+      const db = await openAssetDB();
+      return new Promise((r, j) => { const tx = db.transaction(ASSET_STORE,"readwrite"); tx.objectStore(ASSET_STORE).put(val,key); tx.oncomplete=()=>r(true); tx.onerror=()=>r(false); });
+    } catch(e) { console.warn("[cache] write failed, continuing without cache:", e); return false; }
   }
   async function assetGet(key) {
-    const db = await openAssetDB();
-    return new Promise((r, j) => { const q = db.transaction(ASSET_STORE,"readonly").objectStore(ASSET_STORE).get(key); q.onsuccess=()=>r(q.result); q.onerror=()=>j(q.error); });
+    try {
+      const db = await openAssetDB();
+      return new Promise((r, j) => { const q = db.transaction(ASSET_STORE,"readonly").objectStore(ASSET_STORE).get(key); q.onsuccess=()=>r(q.result); q.onerror=()=>r(null); });
+    } catch(e) { return null; }
   }
 
   async function fetchWithProgress(url, onProgress) {
@@ -1081,44 +1086,74 @@
     selectedBuilt = recipe;
   }
 
-  /* ── Auto-init dataset on load ─────────────── */
+  /* ── Dataset loading (user-triggered, not auto) ── */
+  const yieldToBrowser = () => new Promise(r => setTimeout(r, 0));
+  let datasetLoading = false;
+
   async function initDataset() {
+    if (datasetLoading) return;
+    if (builtVectors && builtRecipes.length) return; // already loaded
+    datasetLoading = true;
+    $("btnLoad").disabled = true;
+
     try {
-      setStatus("Loading...", "Downloading recipe data (cached after first load).");
+      setStatus("Loading recipes...", "Downloading recipe list (cached after first load).");
       setProgress(5);
+      await yieldToBrowser();
 
       const metaBuf = await fetchOrCache("assets/dataset_meta.json", "dataset_meta", 5, 5);
       builtMeta = JSON.parse(new TextDecoder().decode(new Uint8Array(metaBuf)));
+      await yieldToBrowser();
 
       setProgress(12);
       const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
       builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
       $("countText").textContent = String(builtRecipes.length);
+      await yieldToBrowser();
 
-      setStatus("Loading embeddings...", "Downloading vector data.");
+      setStatus("Loading embeddings...", "Downloading search vectors.");
       setProgress(45);
+      await yieldToBrowser();
+
       const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}`, 45, 50);
       if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
         throw new Error("Embeddings file too small or missing.");
       }
-      const aligned = new ArrayBuffer(embBuf.byteLength);
-      new Uint8Array(aligned).set(new Uint8Array(embBuf));
-      builtVectors = new Float32Array(aligned);
+      await yieldToBrowser();
+
+      // Create Float32Array — use the buffer directly if aligned, otherwise copy
+      if (embBuf.byteLength % 4 === 0 && embBuf instanceof ArrayBuffer) {
+        try { builtVectors = new Float32Array(embBuf); } catch(e) {
+          const aligned = new ArrayBuffer(embBuf.byteLength);
+          new Uint8Array(aligned).set(new Uint8Array(embBuf));
+          builtVectors = new Float32Array(aligned);
+        }
+      } else {
+        const aligned = new ArrayBuffer(embBuf.byteLength);
+        new Uint8Array(aligned).set(new Uint8Array(embBuf));
+        builtVectors = new Float32Array(aligned);
+      }
+      await yieldToBrowser();
 
       setProgress(100);
-      setStatus("Ready", `${builtMeta.count.toLocaleString()} recipes loaded. Type a query and press Search.`);
+      setStatus("Ready", `${builtMeta.count.toLocaleString()} recipes loaded. Search away!`);
       $("statusDot").classList.add("ok");
       $("statusDot2").classList.add("ok");
       $("statusDot").title = "Dataset loaded";
+      $("btnLoad").textContent = "Loaded";
       setTimeout(() => setProgress(0), 400);
 
     } catch(e) {
       console.error("[init] failed:", e);
       builtVectors = null; builtRecipes = []; builtMeta = null;
       setProgress(0);
-      setStatus("Init failed", String(e?.message || e));
+      setStatus("Load failed", String(e?.message || e));
       $("statusDot").classList.add("err");
       $("statusDot2").classList.add("err");
+      $("btnLoad").disabled = false;
+      $("btnLoad").textContent = "Retry";
+    } finally {
+      datasetLoading = false;
     }
   }
 
@@ -1143,59 +1178,102 @@
     setStatus("Found", `Result ${searchIdx + 1}/${searchResults.length} from ${src}. ${Math.round(item.score * 100)}% relevance.`);
   }
 
+  // Keyword-only fallback (no embedding model needed)
+  function keywordSearch(query, diet, tagFilter, requireInst, maxResults = 50) {
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    if (!words.length) return [];
+    const scored = [];
+    for (const r of builtRecipes) {
+      if (!r) continue;
+      if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && violatesDiet(r, diet)) continue;
+      if (tagFilter && !(r.tags || []).join(" ").toLowerCase().includes(tagFilter)) continue;
+      if (requireInst && !(r.instructions && r.instructions.trim().length > 10)) continue;
+
+      const titleLow = (r.title || "").toLowerCase();
+      const ingLow = (r.ingredients || "").toLowerCase();
+      const tagsLow = (r.tags || []).join(" ").toLowerCase();
+      let titleHits = 0, bodyHits = 0;
+      for (const w of words) {
+        if (titleLow.includes(w)) titleHits++;
+        else if (ingLow.includes(w) || tagsLow.includes(w)) bodyHits++;
+      }
+      if (titleHits + bodyHits === 0) continue;
+      const score = (titleHits / words.length) * 0.6 + (bodyHits / words.length) * 0.25 +
+                    ((titleHits + bodyHits === words.length) ? 0.15 : 0);
+      scored.push({ recipe: r, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, maxResults);
+  }
+
   async function doSearch() {
     const query = $("q").value.trim();
     if (!query) { setStatus("Ready", "Type what you want to cook."); return; }
-    if (!builtVectors || !builtRecipes.length) {
-      setStatus("Not ready", "Dataset is still loading. Please wait.");
-      return;
+
+    // If dataset not loaded yet, try to load it first
+    if (!builtRecipes.length) {
+      await initDataset();
+      if (!builtRecipes.length) {
+        setStatus("Not ready", "Could not load dataset. Tap Load Recipes to retry.");
+        return;
+      }
     }
 
     $("btnSearch").disabled = true;
+    const tagFilter = ($("tagFilter")?.value || "").trim().toLowerCase();
+    const diet = getDietState();
+    const requireInst = !!$("filterHasInstructions").checked;
+    const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
     try {
-      setStatus("Searching...", "Embedding your query.");
-      setProgress(10);
-      const qv = await embedText(query);
-      setProgress(40);
+      // Try semantic search (needs embedding model)
+      let builtResults = [];
+      let usedSemantic = false;
 
-      const tagFilter = ($("tagFilter")?.value || "").trim().toLowerCase();
-      const diet = getDietState();
-      const requireInst = !!$("filterHasInstructions").checked;
-      const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      try {
+        setStatus("Searching...", "Loading embedding model.");
+        setProgress(10);
+        const qv = await embedText(query);
+        setProgress(40);
 
-      setStatus("Searching...", "Scanning all recipes.");
-      setProgress(60);
+        setStatus("Searching...", "Scanning recipes.");
+        setProgress(60);
+        builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, requireInst, 50);
+        usedSemantic = true;
 
-      const builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, requireInst, 50);
-
-      // also scan user's own recipes
-      let myHits = [];
-      if (myRecipes.length) {
-        for (const r of myRecipes) {
-          if (!r.embedding_b64) continue;
-          if (requireInst && !(r.steps && r.steps.trim().length > 10)) continue;
-          const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
-          if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
-          const rv = base64ToFloat(r.embedding_b64);
-          let s = cosine(qv, rv);
-          // keyword boost for my recipes too
-          if (queryWords.length) {
-            const tl = (r.title||"").toLowerCase();
-            let th = 0;
-            for (const w of queryWords) { if (tl.includes(w)) th++; }
-            s += (th / queryWords.length) * 0.25;
+        // also scan user's own recipes
+        if (myRecipes.length) {
+          for (const r of myRecipes) {
+            if (!r.embedding_b64) continue;
+            if (requireInst && !(r.steps && r.steps.trim().length > 10)) continue;
+            const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
+            if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
+            const rv = base64ToFloat(r.embedding_b64);
+            let s = cosine(qv, rv);
+            if (queryWords.length) {
+              const tl = (r.title||"").toLowerCase();
+              let th = 0;
+              for (const w of queryWords) { if (tl.includes(w)) th++; }
+              s += (th / queryWords.length) * 0.25;
+            }
+            if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && bad) s -= 0.05;
+            builtResults.push({ recipe: r, score: s, isMine: true });
           }
-          if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && bad) s -= 0.05;
-          myHits.push({ recipe: r, score: s, isMine: true });
         }
+      } catch(embedErr) {
+        // Embedding model failed — fall back to keyword search
+        console.warn("[search] embedding failed, using keyword fallback:", embedErr);
+        setStatus("Searching...", "Using keyword search (model unavailable).");
+        builtResults = keywordSearch(query, diet, tagFilter, requireInst, 50);
       }
 
       setProgress(90);
-
-      // merge and sort
-      searchResults = [...myHits, ...builtResults].sort((a, b) => b.score - a.score).slice(0, 50);
+      searchResults = builtResults.sort((a, b) => b.score - a.score).slice(0, 50);
       searchIdx = 0;
       showCurrentResult();
+      if (!usedSemantic && searchResults.length) {
+        setStatus("Found (keyword)", `Result ${searchIdx+1}/${searchResults.length}. Keyword search — model not loaded.`);
+      }
       setProgress(0);
 
     } catch(e) {
@@ -1574,11 +1652,11 @@
   });
 
   /* ══════════════════════════════════════════════
-     STARTUP — auto-init
+     STARTUP
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  initDataset();
+  $("btnLoad").addEventListener("click", initDataset);
 </script>
 </body>
 </html>
