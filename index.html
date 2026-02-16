@@ -994,41 +994,33 @@
     if (extractor) return;
     if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
 
-    const sizeHint = isMobile ? "~5 MB (worker)" : "~12 MB";
+    const sizeHint = isMobile ? "~17 MB" : "~12 MB";
     setStatus("Loading AI model...", `First time downloads ${sizeHint} model (cached after).`);
     setProgress(8);
 
     try {
-      // v3.8.1 includes critical iOS Safari fix: uses non-JSEP WASM build
-      // that avoids the WebKit ASYNCIFY bug causing 10 GB+ memory balloon.
-      // See: https://github.com/huggingface/transformers.js/issues/1242
-      const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js");
-      const env = T.env || T.default?.env;
-      if (env) {
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        // Force single-threaded WASM on mobile to avoid SharedArrayBuffer
-        // issues (requires COOP/COEP headers that GitHub Pages doesn't set).
-        if (isMobile && env.backends?.onnx?.wasm) {
-          env.backends.onnx.wasm.numThreads = 1;
-        }
-      }
-      const pipe = T.pipeline || T.default?.pipeline;
-      try {
+      if (isMobile) {
+        // Mobile fallback (main thread): use v2 which doesn't have the JSEP/ASYNCIFY
+        // bug that causes 10 GB+ memory balloon and crashes on iOS Safari.
+        // See: https://github.com/huggingface/transformers.js/issues/1242
+        const T = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.15.1");
+        const env = T.env || T.default?.env;
+        if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
+        const pipe = T.pipeline || T.default?.pipeline;
+        extractor = await pipe("feature-extraction", MODEL_ID, {
+          pooling: "mean", normalize: true,
+        });
+      } else {
+        // Desktop: use v3 with WebGPU when available
+        const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js");
+        const env = T.env || T.default?.env;
+        if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
+        const pipe = T.pipeline || T.default?.pipeline;
         extractor = await pipe("feature-extraction", MODEL_ID, {
           pooling: "mean", normalize: true,
           device: useDevice,
           dtype: useDtype,
         });
-      } catch (dtypeErr) {
-        if (isMobile && useDtype === "q4") {
-          console.warn("[embedder] q4 failed, trying q8:", dtypeErr);
-          extractor = await pipe("feature-extraction", MODEL_ID, {
-            pooling: "mean", normalize: true,
-            device: useDevice,
-            dtype: "q8",
-          });
-        } else throw dtypeErr;
       }
       setProgress(0);
     } catch(e) {

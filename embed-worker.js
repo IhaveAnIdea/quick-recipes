@@ -1,48 +1,33 @@
 /**
- * Embedding worker for mobile — runs Xenova/paraphrase-MiniLM-L3-v2 in isolation
- * to avoid main-thread memory pressure and iOS Safari jetsam.
- * Uses q4 quantization (~5 MB) for minimal footprint.
+ * Embedding worker for mobile — runs Xenova/paraphrase-MiniLM-L3-v2.
+ *
+ * Uses @xenova/transformers v2.15.1 instead of v3 because v3's JSEP/ASYNCIFY
+ * WASM build causes a memory balloon (10+ GB) that crashes iOS Safari.
+ * See: https://github.com/huggingface/transformers.js/issues/1242
+ *
+ * v2 uses the non-JSEP WASM build and is confirmed working on all iOS versions.
  */
 const MODEL_ID = "Xenova/paraphrase-MiniLM-L3-v2";
 const DIM = 384;
 
 let extractor = null;
-let loading = false;
 let loadPromise = null;
 
 async function ensureExtractor() {
   if (extractor) return;
   if (loadPromise) return loadPromise;
   loadPromise = (async () => {
-    loading = true;
-    const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js");
+    const T = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.15.1");
     const env = T.env || T.default?.env;
     if (env) {
       env.allowLocalModels = false;
       env.useBrowserCache = true;
-      if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
     }
     const pipe = T.pipeline || T.default?.pipeline;
-    try {
-      extractor = await pipe("feature-extraction", MODEL_ID, {
-        pooling: "mean",
-        normalize: true,
-        device: "wasm",
-        dtype: "q4",
-      });
-    } catch (e) {
-      try {
-        extractor = await pipe("feature-extraction", MODEL_ID, {
-          pooling: "mean",
-          normalize: true,
-          device: "wasm",
-          dtype: "q8",
-        });
-      } catch (e2) {
-        throw e;
-      }
-    }
-    loading = false;
+    extractor = await pipe("feature-extraction", MODEL_ID, {
+      pooling: "mean",
+      normalize: true,
+    });
   })();
   return loadPromise;
 }
