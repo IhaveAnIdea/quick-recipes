@@ -1276,10 +1276,11 @@
         await yieldToBrowser();
       }
 
-      // Always fetch meta fresh (tiny file) — its buildId drives cache keys for the big files
-      const metaRes = await fetch("assets/dataset_meta.json");
+      // Always fetch meta fresh (tiny file) — its buildId drives cache-bust params for big files
+      const metaRes = await fetch("assets/dataset_meta.json", { cache: "no-cache" });
       if (!metaRes.ok) throw new Error("Could not load dataset_meta.json");
       builtMeta = await metaRes.json();
+      const cacheBust = `v=${builtMeta.buildId}_${builtMeta.count}`;
       await yieldToBrowser();
 
       // Clean up stale cache entries from old builds (desktop only)
@@ -1303,9 +1304,13 @@
         // recipes.json is ~5 MB. Embeddings (~6 MB) load on first search
         // alongside the quantized model (~6 MB), keeping peak modest.
         setStatus("Loading recipes...", "Downloading recipe list...");
-        const recipesRes = await fetch("assets/recipes.json");
+        const recipesRes = await fetch(`assets/recipes.json?${cacheBust}`);
         if (!recipesRes.ok) throw new Error("Could not load recipes.json");
         builtRecipes = await recipesRes.json();
+        if (builtRecipes.length !== builtMeta.count) {
+          console.warn(`[init] recipes count mismatch: got ${builtRecipes.length}, expected ${builtMeta.count}`);
+          builtRecipes = builtRecipes.slice(0, builtMeta.count);
+        }
         $("countText").textContent = String(builtRecipes.length);
         setProgress(80);
         await yieldToBrowser();
@@ -1314,6 +1319,10 @@
         // ── DESKTOP: use cached fetch with progress tracking ──
         const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}_${builtMeta.count}`, 12, 30);
         builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
+        if (builtRecipes.length !== builtMeta.count) {
+          console.warn(`[init] recipes count mismatch: got ${builtRecipes.length}, expected ${builtMeta.count}`);
+          builtRecipes = builtRecipes.slice(0, builtMeta.count);
+        }
         $("countText").textContent = String(builtRecipes.length);
         await yieldToBrowser();
 
@@ -1368,7 +1377,8 @@
     setStatus("Loading embeddings...", "Downloading search vectors...");
     setProgress(20);
     await yieldToBrowser();
-    const embRes = await fetch("assets/embeddings.bin");
+    const cb = `v=${builtMeta.buildId}_${builtMeta.count}`;
+    const embRes = await fetch(`assets/embeddings.bin?${cb}`);
     if (!embRes.ok) throw new Error("Could not load embeddings.bin");
     const embBuf = await embRes.arrayBuffer();
     await yieldToBrowser();
