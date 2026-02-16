@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Quick Recipes</title>
-  <meta name="description" content="Instant semantic recipe search. Find your best recipe match in 18,000+ dishes. Works offline." />
+  <meta name="description" content="Instant semantic recipe search. Find your best recipe match in 3,895 dishes with full instructions." />
 
   <!-- jsPDF and docx loaded on demand (see lazyJsPDF / lazyDocx) -->
 
@@ -946,9 +946,20 @@
     setProgress(8);
 
     try {
-      const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js");
+      // v3.8.1 includes critical iOS Safari fix: uses non-JSEP WASM build
+      // that avoids the WebKit ASYNCIFY bug causing 10 GB+ memory balloon.
+      // See: https://github.com/huggingface/transformers.js/issues/1242
+      const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js");
       const env = T.env || T.default?.env;
-      if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
+      if (env) {
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+        // Force single-threaded WASM on mobile to avoid SharedArrayBuffer
+        // issues (requires COOP/COEP headers that GitHub Pages doesn't set).
+        if (isMobile && env.backends?.onnx?.wasm) {
+          env.backends.onnx.wasm.numThreads = 1;
+        }
+      }
       const pipe = T.pipeline || T.default?.pipeline;
       extractor = await pipe("feature-extraction", MODEL_ID, {
         pooling: "mean", normalize: true,
