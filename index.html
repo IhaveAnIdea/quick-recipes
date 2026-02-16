@@ -1093,9 +1093,23 @@
       setProgress(5);
       await yieldToBrowser();
 
-      const metaBuf = await fetchOrCache("assets/dataset_meta.json", "dataset_meta", 5, 5);
-      builtMeta = JSON.parse(new TextDecoder().decode(new Uint8Array(metaBuf)));
+      // Always fetch meta fresh (tiny file) — its buildId drives cache keys for the big files
+      const metaRes = await fetch("assets/dataset_meta.json");
+      if (!metaRes.ok) throw new Error("Could not load dataset_meta.json");
+      builtMeta = await metaRes.json();
       await yieldToBrowser();
+
+      // Clean up stale cache entries from old builds
+      try {
+        const db = await openAssetDB();
+        const tx = db.transaction(ASSET_STORE, "readwrite");
+        const store = tx.objectStore(ASSET_STORE);
+        const allKeys = await new Promise(r => { const q = store.getAllKeys(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
+        const validKeys = [`recipes_${builtMeta.buildId}`, `emb_${builtMeta.buildId}`];
+        for (const key of allKeys) {
+          if (!validKeys.includes(key)) store.delete(key);
+        }
+      } catch(e) { /* ignore cleanup errors */ }
 
       setProgress(12);
       const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
