@@ -969,16 +969,16 @@
   let embedderFailed = false;
   const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
-  // Mobile: WASM + quantized q8 model (~6 MB) to stay within iOS memory budget.
+  // Mobile: WASM + q4 model (~11 MB) to stay within iOS memory budget.
   // Desktop: prefer WebGPU when available, full fp32 model (~23 MB).
   const useDevice = (!isMobile && navigator.gpu) ? "webgpu" : "wasm";
-  const useDtype  = isMobile ? "q8" : "fp32";
+  const useDtype  = isMobile ? "q4" : "fp32";
 
   async function loadEmbedder() {
     if (extractor) return;
     if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
 
-    const sizeHint = isMobile ? "~6 MB" : "~23 MB";
+    const sizeHint = isMobile ? "~11 MB" : "~23 MB";
     setStatus("Loading AI model...", `First time downloads ${sizeHint} model (cached after).`);
     setProgress(8);
 
@@ -998,11 +998,22 @@
         }
       }
       const pipe = T.pipeline || T.default?.pipeline;
-      extractor = await pipe("feature-extraction", MODEL_ID, {
-        pooling: "mean", normalize: true,
-        device: useDevice,
-        dtype: useDtype,
-      });
+      try {
+        extractor = await pipe("feature-extraction", MODEL_ID, {
+          pooling: "mean", normalize: true,
+          device: useDevice,
+          dtype: useDtype,
+        });
+      } catch (dtypeErr) {
+        if (isMobile && useDtype === "q4") {
+          console.warn("[embedder] q4 failed, trying q8:", dtypeErr);
+          extractor = await pipe("feature-extraction", MODEL_ID, {
+            pooling: "mean", normalize: true,
+            device: useDevice,
+            dtype: "q8",
+          });
+        } else throw dtypeErr;
+      }
       setProgress(0);
     } catch(e) {
       embedderFailed = true;
@@ -1491,6 +1502,7 @@
       try {
         // Ensure embeddings are loaded (deferred on mobile)
         await ensureEmbeddings();
+        if (isMobile) await new Promise(r => setTimeout(r, 100));
 
         setStatus("Searching...", isMobile ? "Loading AI model (one-time)..." : "Loading embedding model.");
         setProgress(10);
@@ -2060,10 +2072,14 @@
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  // On mobile, do NOT auto-load. User triggers load by searching. This avoids
-  // the init→OOM→reload loop on iOS when HTTP cache serves stale large files.
   if (isMobile) {
     setStatus("Ready", "Tap search to load 3,895 recipes.");
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && builtVectors) {
+        builtVectors = null;
+        extractor = null;
+      }
+    });
   } else {
     initDataset();
   }
