@@ -1085,20 +1085,30 @@
       scored.push({ recipe: r, score, sem, titleHit: titleHits > 0 ? 1 : 0 });
     }
 
-    // Primary ranking: title matches ALWAYS come first, then by score.
-    scored.sort((a, b) => b.titleHit - a.titleHit || b.score - a.score);
-    const results = scored.slice(0, maxResults - 10);
-    const seen = new Set(results.map(x => x.recipe));
+    // Split into title-matching and semantic-only pools.
+    const titlePool = scored.filter(x => x.titleHit).sort((a, b) => b.score - a.score);
+    const semPool   = scored.filter(x => !x.titleHit).sort((a, b) => b.sem - a.sem);
 
-    // Append up to 10 top pure-semantic matches not already in results.
-    // These go at the END so keyword-matched results stay on top,
-    // but semantic discoveries are still accessible via Next.
-    scored.sort((a, b) => b.sem - a.sem);
-    for (const item of scored) {
-      if (results.length >= maxResults) break;
-      if (!seen.has(item.recipe)) {
-        results.push(item);
-        seen.add(item.recipe);
+    // Interleave: every 3 title matches, insert 1 top semantic match.
+    // "fisherman" → fisherman titles first (few titles, semantics fill in).
+    // "pasta meals" → pasta titles + spaghetti/lasagna/noodles mixed in.
+    const results = [];
+    const seen = new Set();
+    let ti = 0, si = 0;
+    while (results.length < maxResults && (ti < titlePool.length || si < semPool.length)) {
+      for (let k = 0; k < 3 && ti < titlePool.length && results.length < maxResults; k++) {
+        if (!seen.has(titlePool[ti].recipe)) {
+          results.push(titlePool[ti]);
+          seen.add(titlePool[ti].recipe);
+        }
+        ti++;
+      }
+      if (si < semPool.length && results.length < maxResults) {
+        if (!seen.has(semPool[si].recipe)) {
+          results.push(semPool[si]);
+          seen.add(semPool[si].recipe);
+        }
+        si++;
       }
     }
 
