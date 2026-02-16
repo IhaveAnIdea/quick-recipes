@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 
-import { pipeline } from "@xenova/transformers";
+import { pipeline, env } from "@huggingface/transformers";
 
 // -------------------- CONFIG --------------------
 const OUT_DIR = "assets";
@@ -236,19 +236,20 @@ async function loadWikibooks() {
 
 // -------------------- EMBEDDING OUTPUT NORMALIZER --------------------
 function getEmbeddingRow(out, j, dim) {
-  // Case A: array of outputs
+  // v3 Tensor: out.dims shows shape, out.data is flat TypedArray
+  // After { pooling: "mean", normalize: true }, shape is [batch, dim].
+  if (out?.data && out.data.length >= (j + 1) * dim) {
+    return out.data.subarray(j * dim, (j + 1) * dim);
+  }
+
+  // Array of tensors (one per input)
   if (Array.isArray(out)) {
     const item = out[j];
     if (item?.data && item.data.length >= dim) return item.data.subarray(0, dim);
     if (item && ArrayBuffer.isView(item) && item.length >= dim) return item.subarray(0, dim);
   }
 
-  // Case B: single tensor-like with .data for the whole batch: [batch, dim]
-  if (out?.data && out.data.length >= (j + 1) * dim) {
-    return out.data.subarray(j * dim, (j + 1) * dim);
-  }
-
-  throw new Error("Unexpected embedding output shape. Check @xenova/transformers pipeline output.");
+  throw new Error(`Unexpected embedding output shape for row ${j}. out.data.length=${out?.data?.length}, dims=${out?.dims}`);
 }
 
 function isFiniteVec(v) {
@@ -275,30 +276,38 @@ async function main() {
     merged.push(r);
   }
 
-  console.log(`Merged recipes: ${merged.length}`);
+  console.log(`Merged recipes (before filter): ${merged.length}`);
 
-  // Load embedder
+  // Filter to recipes with instructions (removes ~80% of junk)
+  const withInstructions = merged.filter(
+    (r) => r.instructions && r.instructions.trim().length > 10
+  );
+  console.log(`With instructions: ${withInstructions.length} (removed ${merged.length - withInstructions.length})`);
+
+  // Use filtered set from here on
+  const finalRecipes = withInstructions;
+
+  // Load embedder — MUST match the runtime library (@huggingface/transformers v3)
+  // so that build-time recipe vectors live in the same space as runtime query vectors.
   console.log("Loading embedding model…");
+  env.allowLocalModels = false;
   const embedder = await pipeline("feature-extraction", MODEL_ID, {
-    pooling: "mean",
-    normalize: true,
+    dtype: "fp32",
   });
 
   // Embeddings
-  const vectors = new Float32Array(merged.length * DIM);
+  const vectors = new Float32Array(finalRecipes.length * DIM);
 
-  for (let i = 0; i < merged.length; i += BATCH) {
-    const batch = merged.slice(i, i + BATCH);
+  for (let i = 0; i < finalRecipes.length; i += BATCH) {
+    const batch = finalRecipes.slice(i, i + BATCH);
     const docs = batch.map(buildEmbedDoc);
 
-    console.log(`Embedding ${i}..${Math.min(i + BATCH, merged.length)} / ${merged.length}`);
-    const out = await embedder(docs);
+    console.log(`Embedding ${i}..${Math.min(i + BATCH, finalRecipes.length)} / ${finalRecipes.length}`);
+    const out = await embedder(docs, { pooling: "mean", normalize: true });
 
     for (let j = 0; j < batch.length; j++) {
       const row = getEmbeddingRow(out, j, DIM);
       if (!isFiniteVec(row)) {
-        // Extremely rare, but never poison the index build
-        // Replace with zeros so labels stay aligned
         vectors.fill(0, (i + j) * DIM, (i + j + 1) * DIM);
         continue;
       }
@@ -311,7 +320,7 @@ async function main() {
   fs.writeFileSync(path.join(OUT_DIR, "embeddings.bin"), Buffer.from(vectors.buffer));
 
   // Write recipes.json (label order must match embedding order)
-  const recipesOut = merged.map((r, label) => ({
+  const recipesOut = finalRecipes.map((r, label) => ({
     label,
     id: r.id,
     source: r.source,
@@ -329,7 +338,7 @@ async function main() {
     buildId: BUILD_ID,
     model: MODEL_ID,
     dim: DIM,
-    count: merged.length,
+    count: finalRecipes.length,
     search: "brute-force-cosine",
     sources: [
       { name: "Wikibooks Cookbook", license: "CC BY-SA 4.0", ref: "https://en.wikibooks.org/wiki/Cookbook:Recipes" },

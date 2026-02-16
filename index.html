@@ -1003,11 +1003,35 @@
 
   async function embedText(text) {
     await loadEmbedder();
+    const dim = builtMeta?.dim || 384;
     const out = await extractor(text, { pooling: "mean", normalize: true });
-    if (out?.data) return new Float32Array(out.data);
-    if (out?.tolist) return new Float32Array(out.tolist().flat(Infinity));
-    if (Array.isArray(out)) return new Float32Array(out.flat(Infinity));
-    throw new Error("Unexpected embedding output.");
+
+    let vec;
+    if (out?.data) vec = new Float32Array(out.data);
+    else if (out?.tolist) vec = new Float32Array(out.tolist().flat(Infinity));
+    else if (Array.isArray(out)) vec = new Float32Array(out.flat(Infinity));
+    else throw new Error("Unexpected embedding output.");
+
+    // Safety: if the pipeline returned unpooled tokens ([1, seq_len, dim]),
+    // manually mean-pool and L2-normalize to get a single dim-length vector.
+    if (vec.length > dim * 1.5) {
+      console.warn(`[embedText] got ${vec.length} values, expected ${dim}; mean-pooling manually.`);
+      const tokens = Math.round(vec.length / dim);
+      const pooled = new Float32Array(dim);
+      for (let i = 0; i < dim; i++) {
+        let sum = 0;
+        for (let t = 0; t < tokens; t++) sum += vec[t * dim + i];
+        pooled[i] = sum / tokens;
+      }
+      let n = 0;
+      for (let i = 0; i < dim; i++) n += pooled[i] * pooled[i];
+      n = Math.sqrt(n) || 1;
+      for (let i = 0; i < dim; i++) pooled[i] /= n;
+      vec = pooled;
+    }
+
+    console.log(`[embedText] "${text}" → ${vec.length} dims, sample: [${vec.slice(0,4).map(v=>v.toFixed(4)).join(", ")}]`);
+    return vec;
   }
 
   function dot(a,b) { let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
@@ -1084,6 +1108,12 @@
 
       scored.push({ recipe: r, score, sem, titleHit: titleHits > 0 ? 1 : 0 });
     }
+
+    // Diagnostic: log top raw cosine scores
+    const topByCosine = [...scored].sort((a,b) => b.sem - a.sem).slice(0, 8);
+    console.log("[search] top 8 by raw cosine:", topByCosine.map(x =>
+      `${x.recipe.title} (sem=${x.sem.toFixed(4)}, score=${x.score.toFixed(4)}, titleHit=${x.titleHit})`
+    ));
 
     // Split into title-matching and semantic-only pools.
     const titlePool = scored.filter(x => x.titleHit).sort((a, b) => b.score - a.score);
