@@ -1837,7 +1837,14 @@
      EXPORTS
   ══════════════════════════════════════════════ */
   function downloadBlob(blob, fn) { const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u); }
-  function toCSV(rows) { const e=v=>{const s=String(v??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}; return rows.map(r=>r.map(e).join(",")).join("\n"); }
+  function toCSV(rows) {
+    const escape = v => {
+      const s = String(v ?? "").replace(/\r\n?/g, "\n");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = rows.map(r => r.map(escape).join(",")).join("\r\n");
+    return "\uFEFF" + csv;
+  }
 
   function cleanExportText(s) {
     if (!s || typeof s !== "string") return "";
