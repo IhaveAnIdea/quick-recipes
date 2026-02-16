@@ -115,6 +115,15 @@
       transition: background .15s;
     }
     .icon-btn:hover { background: var(--border); }
+    .bmac-link {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      color: var(--text2);
+      transition: color .15s, background .15s;
+      text-decoration: none;
+    }
+    .bmac-link:hover { color: #d97706; background: var(--surface2); text-decoration: none; }
     .status-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--warn);
@@ -479,6 +488,9 @@
     </div>
     <div class="nav-actions">
       <div class="status-dot" id="statusDot" title="Dataset not loaded"></div>
+      <a href="https://buymeacoffee.com/craigwinter" target="_blank" rel="noopener" class="bmac-link" title="Buy me a coffee">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+      </a>
       <button class="icon-btn" id="btnTheme" title="Toggle theme">&#9789;</button>
     </div>
   </nav>
