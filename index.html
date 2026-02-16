@@ -6,8 +6,7 @@
   <title>Quick Recipes</title>
   <meta name="description" content="Instant semantic recipe search. Find your best recipe match in 18,000+ dishes. Works offline." />
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+  <!-- jsPDF and docx loaded on demand (see lazyJsPDF / lazyDocx) -->
 
   <style>
     :root {
@@ -367,6 +366,39 @@
       background: var(--primary);
       margin-right: 10px;
       vertical-align: middle;
+    }
+    .instructions-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      counter-reset: step-counter;
+    }
+    .instructions-list li {
+      counter-increment: step-counter;
+      display: flex;
+      gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .instructions-list li:last-child { border-bottom: none; }
+    .instructions-list li::before {
+      content: counter(step-counter);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 1px;
     }
     .instructions-text {
       font-size: 14px;
@@ -788,6 +820,9 @@
     return new Promise((r, j) => { const q = db.transaction(store,"readwrite").objectStore(store).clear(); q.onsuccess=()=>r(true); q.onerror=()=>j(q.error); });
   }
 
+  // Mobile detection — used for memory-safe choices throughout
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   /* ══════════════════════════════════════════════
      ASSET CACHE (blobs in IndexedDB)
   ══════════════════════════════════════════════ */
@@ -839,14 +874,18 @@
   }
 
   async function fetchOrCache(url, cacheKey, pBase=0, pSpan=0) {
-    const cached = await assetGet(cacheKey);
-    if (cached) return cached;
+    // On mobile, skip IndexedDB caching to avoid peak-memory double-buffering
+    // that causes iOS Safari to jetsam-kill the tab. HTTP cache still helps.
+    if (!isMobile) {
+      const cached = await assetGet(cacheKey);
+      if (cached) return cached;
+    }
     const buf = await fetchWithProgress(url, (got, total) => {
       if (!pSpan) return;
       const p = total > 0 ? pBase + (got/total)*pSpan : pBase + Math.min(pSpan*.9, pSpan*(got/5e6));
       setProgress(p);
     });
-    await assetPut(cacheKey, buf);
+    if (!isMobile) await assetPut(cacheKey, buf);
     return buf;
   }
 
@@ -893,8 +932,6 @@
   let embedderFailed = false;
   const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
-  // WebGPU on mobile (iOS/Android) is experimental and crashes ONNX — force CPU
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const useDevice = (!isMobile && navigator.gpu) ? "webgpu" : "wasm";
 
   async function loadEmbedder() {
@@ -1036,6 +1073,37 @@
     return result;
   }
 
+  /* ── Instruction formatting ─────────────────── */
+  function formatInstructions(text) {
+    if (!text) return [];
+    // Try splitting on newlines first
+    let steps = text.split(/\n/).map(s => s.trim()).filter(Boolean);
+
+    // If we got a single blob, try splitting on numbered patterns like "1." "2)" "Step 3:"
+    if (steps.length <= 1) {
+      steps = text
+        .split(/(?=(?:^|\.\s+)\d{1,2}[\.\)]\s)|(?=\bstep\s+\d+)/i)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    // If still a single blob, split on sentence boundaries (". " followed by uppercase)
+    if (steps.length <= 1 && text.length > 120) {
+      steps = text
+        .split(/\.(?=\s+[A-Z])/)
+        .map((s, i, a) => (i < a.length - 1 ? s.trim() + "." : s.trim()))
+        .filter(s => s.length > 2);
+    }
+
+    // Clean up: strip leading numbering, bullets, "step N:" prefixes
+    return steps.map(s =>
+      s.replace(/^\d{1,2}[\.\)]\s*/, "")
+       .replace(/^step\s+\d+[:\.\)]\s*/i, "")
+       .replace(/^[-•*]\s*/, "")
+       .trim()
+    ).filter(Boolean);
+  }
+
   /* ── Show result card ──────────────────────── */
   function showResult(recipe, score) {
     $("resultCard").classList.remove("hidden");
@@ -1067,9 +1135,20 @@
       ul.innerHTML = '<li style="color:var(--text2); font-style:italic">No ingredients listed.</li>';
     }
 
-    // Instructions
+    // Instructions — formatted as numbered steps
     const inst = recipe.instructions || recipe.steps || "";
-    if (inst.trim()) {
+    const instSteps = formatInstructions(inst);
+    if (instSteps.length > 1) {
+      const ol = document.createElement("ol");
+      ol.className = "instructions-list";
+      for (const step of instSteps) {
+        const li = document.createElement("li");
+        li.textContent = step;
+        ol.appendChild(li);
+      }
+      $("rInstructions").innerHTML = "";
+      $("rInstructions").appendChild(ol);
+    } else if (inst.trim()) {
       $("rInstructions").innerHTML = `<div class="instructions-text">${esc(inst)}</div>`;
     } else {
       $("rInstructions").innerHTML = '<div class="no-instructions">No instructions available for this recipe.</div>';
@@ -1099,17 +1178,19 @@
       builtMeta = await metaRes.json();
       await yieldToBrowser();
 
-      // Clean up stale cache entries from old builds
-      try {
-        const db = await openAssetDB();
-        const tx = db.transaction(ASSET_STORE, "readwrite");
-        const store = tx.objectStore(ASSET_STORE);
-        const allKeys = await new Promise(r => { const q = store.getAllKeys(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
-        const validKeys = [`recipes_${builtMeta.buildId}`, `emb_${builtMeta.buildId}`];
-        for (const key of allKeys) {
-          if (!validKeys.includes(key)) store.delete(key);
-        }
-      } catch(e) { /* ignore cleanup errors */ }
+      // Clean up stale cache entries from old builds (desktop only, mobile skips IDB cache)
+      if (!isMobile) {
+        try {
+          const db = await openAssetDB();
+          const tx = db.transaction(ASSET_STORE, "readwrite");
+          const store = tx.objectStore(ASSET_STORE);
+          const allKeys = await new Promise(r => { const q = store.getAllKeys(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
+          const validKeys = [`recipes_${builtMeta.buildId}`, `emb_${builtMeta.buildId}`];
+          for (const key of allKeys) {
+            if (!validKeys.includes(key)) store.delete(key);
+          }
+        } catch(e) { /* ignore cleanup errors */ }
+      }
 
       setProgress(12);
       const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
@@ -1498,7 +1579,18 @@
     }
 
     const inst = r.steps || "";
-    if (inst.trim()) {
+    const instSteps = formatInstructions(inst);
+    if (instSteps.length > 1) {
+      const ol = document.createElement("ol");
+      ol.className = "instructions-list";
+      for (const step of instSteps) {
+        const li = document.createElement("li");
+        li.textContent = step;
+        ol.appendChild(li);
+      }
+      $("mpInstructions").innerHTML = "";
+      $("mpInstructions").appendChild(ol);
+    } else if (inst.trim()) {
       $("mpInstructions").innerHTML = `<div class="instructions-text">${esc(inst)}</div>`;
     } else {
       $("mpInstructions").innerHTML = '<div class="no-instructions">No instructions.</div>';
@@ -1575,25 +1667,37 @@
     for(const it of shopItems) rows.push([it.text,it.checked?"true":"false",it.origin]);
     downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `shopping_list_${todayISO()}.csv`);
   }
-  function pdfExport(title,lines,fn) {
+  async function lazyJsPDF() {
+    if (!window.jspdf) {
+      await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    }
+  }
+  async function lazyDocx() {
+    if (!window.docx) {
+      await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    }
+  }
+  async function pdfExport(title,lines,fn) {
+    await lazyJsPDF();
     const{jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"letter"});
     const m=48; let y=m; doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.text(title,m,y); y+=18;
     doc.setFont("helvetica","normal"); doc.setFontSize(11);
     for(const l of lines){const s=doc.splitTextToSize(l,612-m*2);for(const t of s){if(y>760){doc.addPage();y=m;}doc.text(t,m,y);y+=14;}y+=4;}
     doc.save(fn);
   }
-  function exportMyRecipesPDF() {
+  async function exportMyRecipesPDF() {
     const l=[]; for(const r of myRecipes){l.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]`); if(r.ingredients) l.push("Ingredients:",r.ingredients); if(r.steps) l.push("Instructions:",r.steps); l.push("—");}
-    pdfExport("My Recipes",l,`my_recipes_${todayISO()}.pdf`);
+    await pdfExport("My Recipes",l,`my_recipes_${todayISO()}.pdf`);
   }
-  function exportPlanPDF() {
+  async function exportPlanPDF() {
     const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
-    pdfExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.pdf`);
+    await pdfExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.pdf`);
   }
-  function exportShopPDF() {
-    pdfExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.pdf`);
+  async function exportShopPDF() {
+    await pdfExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.pdf`);
   }
   async function docxExport(title,paras,fn) {
+    await lazyDocx();
     const{Document,Packer,Paragraph,TextRun}=window.docx;
     const doc=new Document({sections:[{children:[new Paragraph({children:[new TextRun({text:title,bold:true,size:32})]}), ...paras.map(t=>new Paragraph(t))]}]});
     downloadBlob(await Packer.toBlob(doc),fn);
