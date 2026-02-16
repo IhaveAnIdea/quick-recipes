@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Quick Recipes</title>
   <meta name="description" content="Instant semantic recipe search. Find your best recipe match in 3,895 dishes — all with full cooking instructions." />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
 
   <!-- jsPDF and docx loaded on demand (see lazyJsPDF / lazyDocx) -->
 
@@ -1247,6 +1250,8 @@
       $("rInstructions").appendChild(ol);
     } else if (inst.trim()) {
       $("rInstructions").innerHTML = `<div class="instructions-text">${esc(inst)}</div>`;
+    } else if (recipe.url) {
+      $("rInstructions").innerHTML = `<div class="no-instructions">Instructions not stored. <a href="${esc(recipe.url)}" target="_blank" rel="noopener">View full recipe &rarr;</a></div>`;
     } else {
       $("rInstructions").innerHTML = '<div class="no-instructions">No instructions available for this recipe.</div>';
     }
@@ -1921,10 +1926,21 @@
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  // On mobile, give the page time to finish layout/paint before loading data.
-  // This prevents iOS Safari from killing the process during initial render.
+  // On mobile, detect crash loops: if we set a flag before init and it's still
+  // there on next load, the page crashed during init. Skip auto-load to break
+  // the cycle and let the user trigger it manually via search.
   if (isMobile) {
-    setTimeout(() => initDataset(), 800);
+    const CRASH_KEY = "qr_init_started";
+    const crashed = sessionStorage.getItem(CRASH_KEY);
+    if (crashed) {
+      console.warn("[startup] previous init may have crashed — skipping auto-load. User search will trigger load.");
+      sessionStorage.removeItem(CRASH_KEY);
+    } else {
+      setTimeout(() => {
+        sessionStorage.setItem(CRASH_KEY, "1");
+        initDataset().finally(() => sessionStorage.removeItem(CRASH_KEY));
+      }, 800);
+    }
   } else {
     initDataset();
   }
