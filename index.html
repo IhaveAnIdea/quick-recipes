@@ -1245,14 +1245,26 @@
     const lines = text.split(/\n/).map(s => s.trim()).filter(Boolean);
     if (lines.length > 1) return lines.map(l => l.replace(/^[-•*]\s*/, ""));
 
-    // single blob: split before quantity patterns (digit after a letter)
-    const parts = text
+    // Single blob — try splitting before quantity patterns (digit/fraction after a letter)
+    let parts = text
       .replace(/(?<=[a-zA-Z),;.]) (?=\d+[\s/.-]|[½¼¾⅓⅔⅛⅜⅝⅞])/g, "\n")
       .split("\n")
       .map(s => s.trim())
       .filter(Boolean);
 
-    // also split on ALL-CAPS section headers like "SAUSAGE GRAVY"
+    // Still a single blob? Split before capitalized words that look like new ingredients.
+    // Pattern: a lowercase letter or closing paren followed by a space then a Capital letter.
+    // e.g. "Pasta Salt Mayonnaise" → ["Pasta", "Salt", "Mayonnaise"]
+    // But preserve multi-word items like "Ground black pepper" or "Bell pepper, chopped"
+    if (parts.length <= 1 && text.length > 20) {
+      parts = text
+        .replace(/(?<=[a-z)\]]) (?=[A-Z][a-z])/g, "\n")
+        .split("\n")
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    // Also split on ALL-CAPS section headers like "SAUSAGE GRAVY"
     const result = [];
     for (const part of parts) {
       if (/^[A-Z][A-Z\s]{2,}$/.test(part.trim())) {
