@@ -569,20 +569,40 @@
           <div class="list" id="mineList"></div>
         </div>
 
-        <div class="card">
-          <h2>Edit Recipe</h2>
-          <input id="mTitle" placeholder="Recipe title" />
-          <div class="row mt-12">
-            <input id="mTags" placeholder="Tags (comma separated)" />
-            <input id="mTime" placeholder="Time, e.g. 20 min" style="max-width:140px" />
+        <div>
+          <!-- Preview (read-only formatted view) -->
+          <div class="card hidden" id="minePreviewCard">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+              <h2 id="mpTitle" style="margin:0; flex:1; min-width:0;"></h2>
+              <button class="btn btn-ghost btn-sm" id="btnMineEdit">Edit</button>
+            </div>
+            <div class="tags mt-12" id="mpTags"></div>
+            <div class="section-heading">Ingredients</div>
+            <ul class="ingredient-list" id="mpIngredients"></ul>
+            <div class="section-heading">Instructions</div>
+            <div id="mpInstructions"></div>
+            <div id="mpNotes" class="mt-16" style="display:none">
+              <div class="section-heading">Notes</div>
+              <div class="instructions-text" id="mpNotesText"></div>
+            </div>
           </div>
-          <textarea id="mIngredients" class="mt-12" placeholder="Ingredients (one per line)"></textarea>
-          <textarea id="mSteps" class="mt-12" placeholder="Instructions / Steps"></textarea>
-          <textarea id="mNotes" class="mt-12" placeholder="Notes (optional)"></textarea>
-          <div class="row mt-12">
-            <button class="btn btn-primary" id="btnSaveMine">Save</button>
-            <button class="btn btn-danger btn-sm" id="btnDeleteMine">Delete</button>
-            <button class="btn btn-ghost btn-sm" id="btnClearMine">Clear</button>
+
+          <!-- Editor (toggled) -->
+          <div class="card hidden" id="mineEditorCard">
+            <h2>Edit Recipe</h2>
+            <input id="mTitle" placeholder="Recipe title" />
+            <div class="row mt-12">
+              <input id="mTags" placeholder="Tags (comma separated)" />
+              <input id="mTime" placeholder="Time, e.g. 20 min" style="max-width:140px" />
+            </div>
+            <textarea id="mIngredients" class="mt-12" placeholder="Ingredients (one per line)"></textarea>
+            <textarea id="mSteps" class="mt-12" placeholder="Instructions / Steps"></textarea>
+            <textarea id="mNotes" class="mt-12" placeholder="Notes (optional)"></textarea>
+            <div class="row mt-12">
+              <button class="btn btn-primary" id="btnSaveMine">Save</button>
+              <button class="btn btn-danger btn-sm" id="btnDeleteMine">Delete</button>
+              <button class="btn btn-ghost btn-sm" id="btnClearMine">Clear</button>
+            </div>
           </div>
         </div>
       </div>
@@ -870,23 +890,36 @@
      EMBEDDER (query + user recipes)
   ══════════════════════════════════════════════ */
   let extractor = null;
+  let embedderFailed = false;
   const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
-  const hasWebGPU = !!navigator.gpu;
+
+  // WebGPU on mobile (iOS/Android) is experimental and crashes ONNX — force CPU
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const useDevice = (!isMobile && navigator.gpu) ? "webgpu" : "wasm";
 
   async function loadEmbedder() {
     if (extractor) return;
+    if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
+
     setStatus("Loading embedding model...", "First time downloads ~23 MB model (cached after).");
     setProgress(8);
-    const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js");
-    const env = T.env || T.default?.env;
-    if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
-    const pipe = T.pipeline || T.default?.pipeline;
-    extractor = await pipe("feature-extraction", MODEL_ID, {
-      pooling: "mean", normalize: true,
-      device: hasWebGPU ? "webgpu" : "cpu",
-      dtype: "fp32",
-    });
-    setProgress(0);
+
+    try {
+      const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js");
+      const env = T.env || T.default?.env;
+      if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
+      const pipe = T.pipeline || T.default?.pipeline;
+      extractor = await pipe("feature-extraction", MODEL_ID, {
+        pooling: "mean", normalize: true,
+        device: useDevice,
+        dtype: "fp32",
+      });
+      setProgress(0);
+    } catch(e) {
+      embedderFailed = true;
+      console.error("[embedder] load failed:", e);
+      throw new Error("Could not load the embedding model. Check your connection and reload.");
+    }
   }
 
   async function embedText(text) {
@@ -1373,10 +1406,46 @@
   }
   $("mineSearch").addEventListener("input", renderMineList);
 
+  function showMinePreview(r) {
+    $("minePreviewCard").classList.remove("hidden");
+    $("mineEditorCard").classList.add("hidden");
+    $("mpTitle").textContent = r.title || "(Untitled)";
+    $("mpTags").innerHTML = (r.tags || []).slice(0, 10).map(t => `<span class="tag">${esc(t)}</span>`).join("");
+
+    const ingList = formatIngredients(r.ingredients || "");
+    const ul = $("mpIngredients"); ul.innerHTML = "";
+    if (ingList.length) {
+      for (const line of ingList) { const li = document.createElement("li"); li.textContent = line; ul.appendChild(li); }
+    } else {
+      ul.innerHTML = '<li style="color:var(--text2); font-style:italic">No ingredients.</li>';
+    }
+
+    const inst = r.steps || "";
+    if (inst.trim()) {
+      $("mpInstructions").innerHTML = `<div class="instructions-text">${esc(inst)}</div>`;
+    } else {
+      $("mpInstructions").innerHTML = '<div class="no-instructions">No instructions.</div>';
+    }
+
+    if (r.notes && r.notes.trim()) {
+      $("mpNotes").style.display = "";
+      $("mpNotesText").textContent = r.notes;
+    } else {
+      $("mpNotes").style.display = "none";
+    }
+  }
+
+  function showMineEditor() {
+    $("minePreviewCard").classList.add("hidden");
+    $("mineEditorCard").classList.remove("hidden");
+  }
+
   function clearMineEditor() {
     selectedMyId=null;
     $("mTitle").value=""; $("mTags").value=""; $("mTime").value="";
     $("mIngredients").value=""; $("mSteps").value=""; $("mNotes").value="";
+    $("minePreviewCard").classList.add("hidden");
+    $("mineEditorCard").classList.remove("hidden");
   }
   function loadMineIntoEditor(id) {
     const r=myRecipes.find(x=>x.id===id); if(!r) return;
@@ -1384,8 +1453,10 @@
     $("mTitle").value=r.title||""; $("mTags").value=(r.tags||[]).join(", ");
     $("mTime").value=r.time||""; $("mIngredients").value=r.ingredients||"";
     $("mSteps").value=r.steps||""; $("mNotes").value=r.notes||"";
+    showMinePreview(r);
   }
-  $("btnNewMine").addEventListener("click", () => { clearMineEditor(); $("mTitle").focus(); });
+  $("btnMineEdit").addEventListener("click", showMineEditor);
+  $("btnNewMine").addEventListener("click", () => { clearMineEditor(); showMineEditor(); $("mTitle").focus(); });
   $("btnClearMine").addEventListener("click", clearMineEditor);
   $("btnSaveMine").addEventListener("click", async () => {
     const title=$("mTitle").value.trim(), tags=normalizeTags($("mTags").value), time=$("mTime").value.trim();
@@ -1396,7 +1467,8 @@
     try {
       const vec = await embedText(myRecipeToEmbedText(rec));
       rec.embedding_b64 = floatToBase64(vec); rec.embedding_dim = vec.length;
-      await idbPut(STORE_RECIPES, rec); await refreshUserState(); selectedMyId=id; alert("Saved.");
+      await idbPut(STORE_RECIPES, rec); await refreshUserState(); selectedMyId=id;
+      showMinePreview(rec); alert("Saved.");
     } catch(e) { console.error(e); alert("Save failed: "+(e?.message||e)); }
   });
   $("btnDeleteMine").addEventListener("click", async () => {
