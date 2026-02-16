@@ -1289,7 +1289,7 @@
           const tx = db.transaction(ASSET_STORE, "readwrite");
           const store = tx.objectStore(ASSET_STORE);
           const allKeys = await new Promise(r => { const q = store.getAllKeys(); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); });
-          const validKeys = [`recipes_${builtMeta.buildId}`, `emb_${builtMeta.buildId}`];
+          const validKeys = [`recipes_${builtMeta.buildId}_${builtMeta.count}`, `emb_${builtMeta.buildId}_${builtMeta.count}`];
           for (const key of allKeys) {
             if (!validKeys.includes(key)) store.delete(key);
           }
@@ -1312,7 +1312,7 @@
         // builtVectors loaded lazily via ensureEmbeddings()
       } else {
         // ── DESKTOP: use cached fetch with progress tracking ──
-        const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
+        const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}_${builtMeta.count}`, 12, 30);
         builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
         $("countText").textContent = String(builtRecipes.length);
         await yieldToBrowser();
@@ -1321,7 +1321,7 @@
         setProgress(45);
         await yieldToBrowser();
 
-        const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}`, 45, 50);
+        const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}_${builtMeta.count}`, 45, 50);
         if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
           throw new Error("Embeddings file too small or missing.");
         }
