@@ -1072,7 +1072,8 @@
           const penalty = sem > 0.45 ? 0.03 : sem > 0.30 ? 0.06 : 0.10;
           score -= penalty;
         } else {
-          score += (titleHits / queryWords.length) * 0.10;
+          // Title match is a strong signal — heavily prioritized.
+          score += (titleHits / queryWords.length) * 0.22;
           score += (bodyHits / queryWords.length) * 0.04;
           if (totalHits === queryWords.length) score += 0.05;
         }
