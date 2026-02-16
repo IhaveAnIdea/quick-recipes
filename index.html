@@ -1842,8 +1842,20 @@
   function cleanExportText(s) {
     if (!s || typeof s !== "string") return "";
     let t = s.replace(/\u00A0/g, " ").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
-    while (t !== (t = t.replace(/([a-zA-Z0-9\u00C0-\u024F\u00BC-\u00BE]) +([a-zA-Z0-9\u00C0-\u024F\u00BC-\u00BE])/g, "$1$2"))) {}
-    return t.replace(/\s+/g, " ").trim();
+    const parts = t.split(/\s+/);
+    const out = [];
+    let run = [];
+    for (const p of parts) {
+      const isSingleLetter = p.length === 1 && /[a-zA-Z]/.test(p);
+      if (isSingleLetter) {
+        run.push(p);
+      } else {
+        if (run.length) { out.push(run.join("")); run = []; }
+        out.push(p);
+      }
+    }
+    if (run.length) out.push(run.join(""));
+    return out.join(" ");
   }
 
   function formatRecipeForExport(r) {
