@@ -932,13 +932,17 @@
   let embedderFailed = false;
   const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
+  // Mobile: WASM + quantized q8 model (~6 MB) to stay within iOS memory budget.
+  // Desktop: prefer WebGPU when available, full fp32 model (~23 MB).
   const useDevice = (!isMobile && navigator.gpu) ? "webgpu" : "wasm";
+  const useDtype  = isMobile ? "q8" : "fp32";
 
   async function loadEmbedder() {
     if (extractor) return;
     if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
 
-    setStatus("Loading embedding model...", "First time downloads ~23 MB model (cached after).");
+    const sizeHint = isMobile ? "~6 MB" : "~23 MB";
+    setStatus("Loading AI model...", `First time downloads ${sizeHint} model (cached after).`);
     setProgress(8);
 
     try {
@@ -949,7 +953,7 @@
       extractor = await pipe("feature-extraction", MODEL_ID, {
         pooling: "mean", normalize: true,
         device: useDevice,
-        dtype: "fp32",
+        dtype: useDtype,
       });
       setProgress(0);
     } catch(e) {
@@ -1202,30 +1206,17 @@
       setProgress(12);
 
       if (isMobile) {
-        // ── MOBILE: lean path using native APIs to minimize peak memory ──
-        // response.json() is far more efficient than downloading a buffer,
-        // decoding to string, then JSON.parse (avoids 2x copies).
+        // ── MOBILE: lean path — only load recipes now, defer embeddings to first search ──
+        // This keeps startup memory at ~5 MB. Embeddings (~6 MB) load on first search
+        // alongside the quantized model (~6 MB), keeping peak around ~25 MB.
         setStatus("Loading recipes...", "Downloading recipe list...");
         const recipesRes = await fetch("assets/recipes.json");
         if (!recipesRes.ok) throw new Error("Could not load recipes.json");
         builtRecipes = await recipesRes.json();
         $("countText").textContent = String(builtRecipes.length);
-        setProgress(35);
+        setProgress(80);
         await yieldToBrowser();
-
-        setStatus("Loading embeddings...", "Downloading search vectors...");
-        const embRes = await fetch("assets/embeddings.bin");
-        if (!embRes.ok) throw new Error("Could not load embeddings.bin");
-        const embBuf = await embRes.arrayBuffer();
-        setProgress(65);
-        await yieldToBrowser();
-
-        if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
-          throw new Error("Embeddings file too small or missing.");
-        }
-        // View directly — no copy needed since we own the buffer
-        builtVectors = new Float32Array(embBuf);
-        await yieldToBrowser();
+        // builtVectors loaded lazily via ensureEmbeddings()
       } else {
         // ── DESKTOP: use cached fetch with progress tracking ──
         const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
@@ -1275,6 +1266,24 @@
     } finally {
       datasetLoading = false;
     }
+  }
+
+  /* ── Lazy-load embeddings (mobile only) ──────── */
+  async function ensureEmbeddings() {
+    if (builtVectors) return;
+    if (!builtMeta) throw new Error("Dataset meta not loaded.");
+    setStatus("Loading embeddings...", "Downloading search vectors...");
+    setProgress(20);
+    await yieldToBrowser();
+    const embRes = await fetch("assets/embeddings.bin");
+    if (!embRes.ok) throw new Error("Could not load embeddings.bin");
+    const embBuf = await embRes.arrayBuffer();
+    await yieldToBrowser();
+    if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
+      throw new Error("Embeddings file too small or missing.");
+    }
+    builtVectors = new Float32Array(embBuf);
+    await yieldToBrowser();
   }
 
   /* ══════════════════════════════════════════════
@@ -1349,48 +1358,44 @@
       let builtResults = [];
       let usedSemantic = false;
 
-      if (isMobile) {
-        // ── MOBILE: keyword search only (no 23 MB model download) ──
+      try {
+        // Ensure embeddings are loaded (deferred on mobile)
+        await ensureEmbeddings();
+
+        setStatus("Searching...", isMobile ? "Loading AI model (one-time)..." : "Loading embedding model.");
+        setProgress(10);
+        const qv = await embedText(query);
+        await yieldToBrowser();
+        setProgress(40);
+
         setStatus("Searching...", "Scanning recipes.");
-        setProgress(30);
-        builtResults = keywordSearch(query, diet, tagFilter, 50);
-      } else {
-        // ── DESKTOP: semantic search with embedding model ──
-        try {
-          setStatus("Searching...", "Loading embedding model.");
-          setProgress(10);
-          const qv = await embedText(query);
-          setProgress(40);
+        setProgress(60);
+        builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, 50);
+        usedSemantic = true;
 
-          setStatus("Searching...", "Scanning recipes.");
-          setProgress(60);
-          builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, 50);
-          usedSemantic = true;
-
-          // also scan user's own recipes
-          if (myRecipes.length) {
-            for (const r of myRecipes) {
-              if (!r.embedding_b64) continue;
-              const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
-              if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
-              const rv = base64ToFloat(r.embedding_b64);
-              let s = cosine(qv, rv);
-              if (queryWords.length) {
-                const tl = (r.title||"").toLowerCase();
-                let th = 0;
-                for (const w of queryWords) { if (tl.includes(w)) th++; }
-                s += (th / queryWords.length) * 0.25;
-              }
-              if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && bad) s -= 0.05;
-              builtResults.push({ recipe: r, score: s, isMine: true });
+        // also scan user's own recipes
+        if (myRecipes.length) {
+          for (const r of myRecipes) {
+            if (!r.embedding_b64) continue;
+            const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
+            if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
+            const rv = base64ToFloat(r.embedding_b64);
+            let s = cosine(qv, rv);
+            if (queryWords.length) {
+              const tl = (r.title||"").toLowerCase();
+              let th = 0;
+              for (const w of queryWords) { if (tl.includes(w)) th++; }
+              s += (th / queryWords.length) * 0.25;
             }
+            if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && bad) s -= 0.05;
+            builtResults.push({ recipe: r, score: s, isMine: true });
           }
-        } catch(embedErr) {
-          // Embedding model failed — fall back to keyword search
-          console.warn("[search] embedding failed, using keyword fallback:", embedErr);
-          setStatus("Searching...", "Using keyword search (model unavailable).");
-          builtResults = keywordSearch(query, diet, tagFilter, 50);
         }
+      } catch(embedErr) {
+        // Embedding model failed — fall back to keyword search
+        console.warn("[search] embedding failed, using keyword fallback:", embedErr);
+        setStatus("Searching...", "Using keyword search.");
+        builtResults = keywordSearch(query, diet, tagFilter, 50);
       }
 
       setProgress(90);
@@ -1398,7 +1403,7 @@
       searchIdx = 0;
       showCurrentResult();
       if (!usedSemantic && searchResults.length) {
-        setStatus("Found", `Result ${searchIdx+1}/${searchResults.length}.`);
+        setStatus("Found", `Result ${searchIdx+1}/${searchResults.length}. (keyword mode)`);
       }
       setProgress(0);
 
