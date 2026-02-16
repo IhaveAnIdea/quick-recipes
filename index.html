@@ -747,6 +747,12 @@
           <p style="margin-top:8px"><a href="https://github.com/IhaveAnIdea/quick-recipes" target="_blank" rel="noopener">View source on GitHub</a></p>
         </div>
       </div>
+      <div class="card">
+        <h2>Diagnostics</h2>
+        <div class="card-sub">Breadcrumb log — persists across reloads. Shows where crashes happen.</div>
+        <pre id="diagLog" class="small" style="max-height:200px; overflow:auto; background:var(--surface2); padding:8px; border-radius:8px; font-size:11px; line-height:1.4; white-space:pre-wrap; word-break:break-all;"></pre>
+        <button type="button" class="btn btn-sm mt-12" id="btnDiagClear">Clear log</button>
+      </div>
     </div>
   </div>
 
@@ -760,6 +766,33 @@
   const uid = () => "u_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
   const todayISO = () => new Date().toISOString().slice(0,10);
 
+  /* ── Crash diagnostics (persists across reloads via localStorage) ── */
+  const DIAG_KEY = "qr_diag";
+  function diagLog(msg) {
+    try {
+      const log = JSON.parse(localStorage.getItem(DIAG_KEY) || "[]");
+      log.push({ t: Date.now(), m: msg });
+      if (log.length > 40) log.splice(0, log.length - 40);
+      localStorage.setItem(DIAG_KEY, JSON.stringify(log));
+    } catch(e) { /* ignore */ }
+  }
+  function diagRead() {
+    try { return JSON.parse(localStorage.getItem(DIAG_KEY) || "[]"); } catch { return []; }
+  }
+  // Show previous crash breadcrumbs on load
+  (function showDiagOnLoad() {
+    const log = diagRead();
+    if (!log.length) return;
+    const last = log[log.length - 1];
+    const age = Date.now() - last.t;
+    // If last entry is < 30s old, we likely just crashed — show it
+    if (age < 30000) {
+      const el = document.getElementById("statusSub");
+      if (el) el.textContent = "Crash log: " + log.slice(-5).map(x => x.m).join(" → ");
+    }
+  })();
+  diagLog("page-load");
+
   function setProgress(p) { $("bar").style.width = `${clamp(p,0,100)}%`; }
   function setStatus(msg, sub="") {
     $("statusText").innerHTML = `<b>${esc(msg)}</b>`;
@@ -767,12 +800,14 @@
   }
 
   window.addEventListener("unhandledrejection", e => {
+    diagLog("unhandledrejection:" + String(e.reason?.message || e.reason || "?").slice(0, 80));
     console.error("unhandledrejection", e.reason);
     setStatus("Error", String(e.reason?.message || e.reason || "Unknown"));
     setProgress(0);
     e.preventDefault();
   });
   window.addEventListener("error", e => {
+    diagLog("error:" + String(e.error?.message || e.message || "?").slice(0, 80));
     console.error("error", e.error || e.message);
     setStatus("Error", String(e.error?.message || e.message || "Unknown"));
     setProgress(0);
@@ -993,6 +1028,7 @@
   async function loadEmbedder() {
     if (extractor) return;
     if (embedderFailed) throw new Error("Embedding model failed to load. Reload the page to retry.");
+    diagLog("loadEmbedder-start");
 
     const sizeHint = isMobile ? "~17 MB" : "~12 MB";
     setStatus("Loading AI model...", `First time downloads ${sizeHint} model (cached after).`);
@@ -1031,8 +1067,10 @@
   }
 
   async function embedText(text) {
+    diagLog("embedText-start");
     // Mobile: use worker to isolate WASM from main thread
     if (isMobile && getEmbedWorker()) {
+      diagLog("embedText-worker");
       return new Promise((resolve, reject) => {
         const id = "e_" + Date.now() + "_" + Math.random().toString(36).slice(2);
         const handler = (e) => {
@@ -1321,6 +1359,7 @@
     if (datasetLoading) return;
     if (builtVectors && builtRecipes.length) return;
     datasetLoading = true;
+    diagLog("initDataset-start");
 
     try {
       setStatus("Loading recipes...", "Downloading recipe data...");
@@ -1358,9 +1397,7 @@
       setProgress(12);
 
       if (isMobile) {
-        // ── MOBILE: lean path — only load recipes now, defer embeddings to first search ──
-        // recipes.json is ~5 MB. Embeddings (~6 MB) load on first search
-        // alongside the quantized model (~6 MB), keeping peak modest.
+        diagLog("mobile-recipes-fetch");
         setStatus("Loading recipes...", "Downloading recipe list...");
         const recipesRes = await fetch(`assets/recipes.json?${cacheBust}`);
         if (!recipesRes.ok) throw new Error("Could not load recipes.json");
@@ -1445,6 +1482,7 @@
   async function ensureEmbeddings() {
     if (builtVectors) return;
     if (!builtMeta) throw new Error("Dataset meta not loaded.");
+    diagLog("ensureEmb-start");
     setStatus("Loading embeddings...", "Downloading search vectors...");
     setProgress(20);
     await yieldToBrowser();
@@ -1457,6 +1495,7 @@
       throw new Error("Embeddings file too small or missing.");
     }
     builtVectors = new Float32Array(embBuf);
+    diagLog("ensureEmb-done:" + builtVectors.length);
     await yieldToBrowser();
   }
 
@@ -1515,6 +1554,7 @@
   async function doSearch() {
     const query = $("q").value.trim();
     if (!query) { setStatus("Ready", "Type what you want to cook."); return; }
+    diagLog("search:" + query.slice(0, 30));
 
     // On mobile: yield to browser before heavy work — lets iOS process the tap
     // and avoids race conditions that can trigger reload/jetsam.
@@ -1587,6 +1627,7 @@
         setStatus("Found", `Result ${searchIdx+1}/${searchResults.length}. (keyword mode)`);
       }
       setProgress(0);
+      diagLog("search-done:" + searchResults.length + "results");
       if (isMobile) releaseMobileMemory();
 
     } catch(e) {
@@ -2107,6 +2148,25 @@
     await idbClear(STORE_RECIPES); await idbClear(STORE_PLAN); await idbClear(STORE_SHOP);
     await refreshUserState(); clearMineEditor(); alert("Wiped.");
   });
+
+  /* ── Diagnostics UI ──────────────────────────── */
+  function renderDiagLog() {
+    const log = diagRead();
+    const el = $("diagLog");
+    if (!el) return;
+    if (!log.length) { el.textContent = "(empty)"; return; }
+    el.textContent = log.map(x => {
+      const d = new Date(x.t);
+      const ts = d.toLocaleTimeString() + "." + String(d.getMilliseconds()).padStart(3, "0");
+      return `[${ts}] ${x.m}`;
+    }).join("\n");
+    el.scrollTop = el.scrollHeight;
+  }
+  $("btnDiagClear")?.addEventListener("click", () => {
+    localStorage.removeItem(DIAG_KEY);
+    renderDiagLog();
+  });
+  renderDiagLog();
 
   /* ══════════════════════════════════════════════
      STARTUP
