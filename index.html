@@ -880,9 +880,15 @@
       return new Promise((r, j) => { const q = db.transaction(ASSET_STORE,"readonly").objectStore(ASSET_STORE).get(key); q.onsuccess=()=>r(q.result); q.onerror=()=>r(null); });
     } catch(e) { return null; }
   }
+  async function assetDelete(key) {
+    try {
+      const db = await openAssetDB();
+      return new Promise((r, j) => { const tx = db.transaction(ASSET_STORE,"readwrite"); tx.objectStore(ASSET_STORE).delete(key); tx.oncomplete=()=>r(true); tx.onerror=()=>r(false); });
+    } catch(e) { return false; }
+  }
 
-  async function fetchWithProgress(url, onProgress) {
-    const res = await fetch(url);
+  async function fetchWithProgress(url, onProgress, fetchOpts) {
+    const res = await fetch(url, fetchOpts);
     if (!res.ok) throw new Error(`Fetch failed: ${url} (${res.status})`);
     const total = Number(res.headers.get("content-length")) || 0;
     if (!res.body || typeof res.body.getReader !== "function") {
@@ -904,10 +910,10 @@
     return out.buffer;
   }
 
-  async function fetchOrCache(url, cacheKey, pBase=0, pSpan=0) {
+  async function fetchOrCache(url, cacheKey, pBase=0, pSpan=0, forceRefresh=false) {
     // On mobile, skip IndexedDB caching to avoid peak-memory double-buffering
     // that causes iOS Safari to jetsam-kill the tab. HTTP cache still helps.
-    if (!isMobile) {
+    if (!isMobile && !forceRefresh) {
       const cached = await assetGet(cacheKey);
       if (cached) return cached;
     }
@@ -915,7 +921,7 @@
       if (!pSpan) return;
       const p = total > 0 ? pBase + (got/total)*pSpan : pBase + Math.min(pSpan*.9, pSpan*(got/5e6));
       setProgress(p);
-    });
+    }, forceRefresh ? { cache: "no-cache" } : undefined);
     if (!isMobile) await assetPut(cacheKey, buf);
     return buf;
   }
@@ -1323,11 +1329,15 @@
         // builtVectors loaded lazily via ensureEmbeddings()
       } else {
         // ── DESKTOP: use cached fetch with progress tracking ──
-        const recipesBuf = await fetchOrCache(`assets/recipes.json?${cacheBust}`, `recipes_${builtMeta.buildId}_${builtMeta.count}`, 12, 30);
+        const recipesKey = `recipes_${builtMeta.buildId}_${builtMeta.count}`;
+        let recipesBuf = await fetchOrCache(`assets/recipes.json?${cacheBust}`, recipesKey, 12, 30);
         builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
         if (builtRecipes.length !== builtMeta.count) {
-          console.warn(`[init] recipes count mismatch: got ${builtRecipes.length}, expected ${builtMeta.count}`);
-          builtRecipes = builtRecipes.slice(0, builtMeta.count);
+          console.warn(`[init] recipes count mismatch: got ${builtRecipes.length}, expected ${builtMeta.count} — clearing stale cache and refetching`);
+          await assetDelete(recipesKey);
+          await assetDelete(`emb_${builtMeta.buildId}_${builtMeta.count}`);
+          recipesBuf = await fetchOrCache(`assets/recipes.json?${cacheBust}`, recipesKey, 12, 30, true);
+          builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
         }
         $("countText").textContent = String(builtRecipes.length);
         await yieldToBrowser();
@@ -1336,9 +1346,18 @@
         setProgress(45);
         await yieldToBrowser();
 
-        const embBuf = await fetchOrCache(`assets/embeddings.bin?${cacheBust}`, `emb_${builtMeta.buildId}_${builtMeta.count}`, 45, 50);
-        if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
-          throw new Error("Embeddings file too small or missing.");
+        const embKey = `emb_${builtMeta.buildId}_${builtMeta.count}`;
+        let embBuf = await fetchOrCache(`assets/embeddings.bin?${cacheBust}`, embKey, 45, 50);
+        const expectedEmbSize = builtMeta.count * builtMeta.dim * 4;
+        if (!embBuf || embBuf.byteLength !== expectedEmbSize) {
+          if (embBuf && embBuf.byteLength > expectedEmbSize) {
+            console.warn(`[init] embeddings size mismatch: got ${embBuf.byteLength}, expected ${expectedEmbSize} — clearing stale cache and refetching`);
+            await assetDelete(embKey);
+            embBuf = await fetchOrCache(`assets/embeddings.bin?${cacheBust}`, embKey, 45, 50, true);
+          }
+          if (!embBuf || embBuf.byteLength < expectedEmbSize) {
+            throw new Error("Embeddings file too small or missing.");
+          }
         }
         await yieldToBrowser();
 
