@@ -469,10 +469,9 @@
       <div class="status-bar" id="statusBar">
         <div class="status-dot" id="statusDot2"></div>
         <div style="flex:1">
-          <div id="statusText"><b>Ready to load</b></div>
-          <div class="small" id="statusSub">Tap "Load Recipes" to download the dataset (one-time, ~11 MB).</div>
+          <div id="statusText"><b>Loading...</b></div>
+          <div class="small" id="statusSub">Downloading recipe data (one-time, cached after).</div>
         </div>
-        <button class="btn btn-primary btn-sm" id="btnLoad" style="flex-shrink:0">Load Recipes</button>
       </div>
       <div class="progress-wrap" id="progressWrap">
         <div class="progress-bar" id="bar"></div>
@@ -1086,9 +1085,8 @@
 
   async function initDataset() {
     if (datasetLoading) return;
-    if (builtVectors && builtRecipes.length) return; // already loaded
+    if (builtVectors && builtRecipes.length) return;
     datasetLoading = true;
-    $("btnLoad").disabled = true;
 
     try {
       setStatus("Loading recipes...", "Downloading recipe list (cached after first load).");
@@ -1134,7 +1132,6 @@
       $("statusDot").classList.add("ok");
       $("statusDot2").classList.add("ok");
       $("statusDot").title = "Dataset loaded";
-      $("btnLoad").textContent = "Loaded";
       setTimeout(() => setProgress(0), 400);
 
     } catch(e) {
@@ -1144,8 +1141,6 @@
       setStatus("Load failed", String(e?.message || e));
       $("statusDot").classList.add("err");
       $("statusDot2").classList.add("err");
-      $("btnLoad").disabled = false;
-      $("btnLoad").textContent = "Retry";
     } finally {
       datasetLoading = false;
     }
@@ -1646,7 +1641,7 @@
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  $("btnLoad").addEventListener("click", initDataset);
+  initDataset();
 </script>
 </body>
 </html>
