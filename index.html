@@ -1839,9 +1839,20 @@
   function downloadBlob(blob, fn) { const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u); }
   function toCSV(rows) { const e=v=>{const s=String(v??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}; return rows.map(r=>r.map(e).join(",")).join("\n"); }
 
+  function formatRecipeForExport(r) {
+    const ingLines = formatIngredients(r.ingredients || "");
+    const instSteps = formatInstructions(r.steps || r.instructions || "");
+    const ingredients = ingLines.length ? ingLines.map(l => `• ${l}`).join("\n") : "";
+    const instructions = instSteps.length ? instSteps.map((s, i) => `${i + 1}. ${s}`).join("\n") : "";
+    return { ingredients, instructions };
+  }
+
   function exportMyRecipesCSV() {
     const rows=[["title","tags","time","ingredients","instructions","notes","updatedAt"]];
-    for(const r of myRecipes) rows.push([r.title||"",(r.tags||[]).join("; "),r.time||"",r.ingredients||"",r.steps||"",r.notes||"",r.updatedAt?new Date(r.updatedAt).toISOString():""]);
+    for(const r of myRecipes) {
+      const { ingredients, instructions } = formatRecipeForExport(r);
+      rows.push([r.title||"",(r.tags||[]).join("; "),r.time||"",ingredients,instructions,r.notes||"",r.updatedAt?new Date(r.updatedAt).toISOString():""]);
+    }
     downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `my_recipes_${todayISO()}.csv`);
   }
   function exportPlanCSV() {
@@ -1873,12 +1884,30 @@
     doc.save(fn);
   }
   async function exportMyRecipesPDF() {
-    const l=[]; for(const r of myRecipes){l.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]`); if(r.ingredients) l.push("Ingredients:",r.ingredients); if(r.steps) l.push("Instructions:",r.steps); l.push("—");}
-    await pdfExport("My Recipes",l,`my_recipes_${todayISO()}.pdf`);
+    const l=[];
+    for(const r of myRecipes){
+      l.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]${r.time?"  • "+r.time:""}`);
+      const { ingredients, instructions } = formatRecipeForExport(r);
+      if(ingredients){ l.push("Ingredients:"); l.push(...ingredients.split("\n")); }
+      if(instructions){ l.push("Instructions:"); l.push(...instructions.split("\n")); }
+      l.push("—");
+    }
+    await pdfExport("My Recipes",l.length?l:["(empty)"],`my_recipes_${todayISO()}.pdf`);
   }
   async function exportPlanPDF() {
     const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
-    await pdfExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.pdf`);
+    const lines=[];
+    let lastDate="";
+    for(const p of s){
+      if(p.date!==lastDate){
+        if(lastDate) lines.push("");
+        const d=new Date(p.date+"T12:00:00");
+        lines.push(d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}));
+        lastDate=p.date;
+      }
+      lines.push(`  ${p.meal}: ${p.title} (${p.servings} servings)`);
+    }
+    await pdfExport("Meal Plan",lines.length?lines:["(empty)"],`meal_plan_${todayISO()}.pdf`);
   }
   async function exportShopPDF() {
     await pdfExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.pdf`);
@@ -1890,12 +1919,30 @@
     downloadBlob(await Packer.toBlob(doc),fn);
   }
   async function exportMyRecipesDOCX() {
-    const p=[]; for(const r of myRecipes){p.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]`); if(r.ingredients){p.push("Ingredients:");p.push(r.ingredients);} if(r.steps){p.push("Instructions:");p.push(r.steps);} p.push("—");}
+    const p=[];
+    for(const r of myRecipes){
+      p.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]${r.time?"  • "+r.time:""}`);
+      const { ingredients, instructions } = formatRecipeForExport(r);
+      if(ingredients){ p.push("Ingredients:"); p.push(...ingredients.split("\n")); }
+      if(instructions){ p.push("Instructions:"); p.push(...instructions.split("\n")); }
+      p.push("—");
+    }
     await docxExport("My Recipes",p.length?p:["(empty)"],`my_recipes_${todayISO()}.docx`);
   }
   async function exportPlanDOCX() {
     const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
-    await docxExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.docx`);
+    const lines=[];
+    let lastDate="";
+    for(const p of s){
+      if(p.date!==lastDate){
+        if(lastDate) lines.push("");
+        const d=new Date(p.date+"T12:00:00");
+        lines.push(d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}));
+        lastDate=p.date;
+      }
+      lines.push(`  ${p.meal}: ${p.title} (${p.servings} servings)`);
+    }
+    await docxExport("Meal Plan",lines.length?lines:["(empty)"],`meal_plan_${todayISO()}.docx`);
   }
   async function exportShopDOCX() {
     await docxExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.docx`);
