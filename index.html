@@ -1839,11 +1839,18 @@
   function downloadBlob(blob, fn) { const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u); }
   function toCSV(rows) { const e=v=>{const s=String(v??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}; return rows.map(r=>r.map(e).join(",")).join("\n"); }
 
+  function cleanExportText(s) {
+    if (!s || typeof s !== "string") return "";
+    let t = s.replace(/\u00A0/g, " ").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+    while (t !== (t = t.replace(/([a-zA-Z0-9\u00C0-\u024F\u00BC-\u00BE]) +([a-zA-Z0-9\u00C0-\u024F\u00BC-\u00BE])/g, "$1$2"))) {}
+    return t.replace(/\s+/g, " ").trim();
+  }
+
   function formatRecipeForExport(r) {
     const ingLines = formatIngredients(r.ingredients || "");
     const instSteps = formatInstructions(r.steps || r.instructions || "");
-    const ingredients = ingLines.length ? ingLines.map(l => `• ${l}`).join("\n") : "";
-    const instructions = instSteps.length ? instSteps.map((s, i) => `${i + 1}. ${s}`).join("\n") : "";
+    const ingredients = ingLines.length ? ingLines.map(l => `• ${cleanExportText(l)}`).join("\n") : "";
+    const instructions = instSteps.length ? instSteps.map((s, i) => `${i + 1}. ${cleanExportText(s)}`).join("\n") : "";
     return { ingredients, instructions };
   }
 
@@ -1851,18 +1858,18 @@
     const rows=[["title","tags","time","ingredients","instructions","notes","updatedAt"]];
     for(const r of myRecipes) {
       const { ingredients, instructions } = formatRecipeForExport(r);
-      rows.push([r.title||"",(r.tags||[]).join("; "),r.time||"",ingredients,instructions,r.notes||"",r.updatedAt?new Date(r.updatedAt).toISOString():""]);
+      rows.push([cleanExportText(r.title||""),(r.tags||[]).map(cleanExportText).join("; "),r.time||"",ingredients,instructions,cleanExportText(r.notes||""),r.updatedAt?new Date(r.updatedAt).toISOString():""]);
     }
     downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `my_recipes_${todayISO()}.csv`);
   }
   function exportPlanCSV() {
     const rows=[["date","meal","servings","title","kind"]];
-    for(const p of [...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal))) rows.push([p.date,p.meal,p.servings,p.title,p.kind]);
+    for(const p of [...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal))) rows.push([p.date,p.meal,p.servings,cleanExportText(p.title),p.kind]);
     downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `meal_plan_${todayISO()}.csv`);
   }
   function exportShopCSV() {
     const rows=[["item","checked","origin"]];
-    for(const it of shopItems) rows.push([it.text,it.checked?"true":"false",it.origin]);
+    for(const it of shopItems) rows.push([cleanExportText(it.text),it.checked?"true":"false",it.origin]);
     downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `shopping_list_${todayISO()}.csv`);
   }
   async function lazyJsPDF() {
@@ -1875,77 +1882,118 @@
       await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
     }
   }
-  async function pdfExport(title,lines,fn) {
+  async function pdfExport(title, blocks, fn) {
     await lazyJsPDF();
-    const{jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"letter"});
-    const m=48; let y=m; doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.text(title,m,y); y+=18;
-    doc.setFont("helvetica","normal"); doc.setFontSize(11);
-    for(const l of lines){const s=doc.splitTextToSize(l,612-m*2);for(const t of s){if(y>760){doc.addPage();y=m;}doc.text(t,m,y);y+=14;}y+=4;}
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const m = 52, w = 612 - m * 2, lineH = 16, pageH = 792;
+    let y = m;
+
+    const draw = (text, font = "helvetica", style = "normal", size = 11) => {
+      doc.setFont(font, style);
+      doc.setFontSize(size);
+      const lines = doc.splitTextToSize(text, w);
+      for (const t of lines) {
+        if (y > pageH - 48) { doc.addPage(); y = m; }
+        doc.text(t, m, y);
+        y += lineH;
+      }
+      y += 4;
+    };
+
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, m, y);
+    y += 28;
+
+    for (const b of blocks) {
+      const block = typeof b === "string" ? { type: "body", text: b } : b;
+      if (!block.text && block.type !== "divider") continue;
+      if (block.type === "title") { draw(block.text, "helvetica", "bold", 18); y += 8; }
+      else if (block.type === "h1") { draw(block.text, "helvetica", "bold", 14); y += 4; }
+      else if (block.type === "h2") { draw(block.text, "helvetica", "bold", 12); y += 2; }
+      else if (block.type === "divider") { y += 12; }
+      else { draw(block.text, "helvetica", "normal", 11); }
+    }
     doc.save(fn);
   }
   async function exportMyRecipesPDF() {
-    const l=[];
+    const blocks=[];
     for(const r of myRecipes){
-      l.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]${r.time?"  • "+r.time:""}`);
+      blocks.push({ type: "h1", text: `${cleanExportText(r.title||"(untitled)")}${(r.tags||[]).length ? `  [${(r.tags||[]).map(cleanExportText).join(", ")}]` : ""}${r.time ? "  • "+r.time : ""}` });
       const { ingredients, instructions } = formatRecipeForExport(r);
-      if(ingredients){ l.push("Ingredients:"); l.push(...ingredients.split("\n")); }
-      if(instructions){ l.push("Instructions:"); l.push(...instructions.split("\n")); }
-      l.push("—");
+      if(ingredients){ blocks.push({ type: "h2", text: "Ingredients" }); for(const ln of ingredients.split("\n")) blocks.push({ type: "body", text: ln }); }
+      if(instructions){ blocks.push({ type: "h2", text: "Instructions" }); for(const ln of instructions.split("\n")) blocks.push({ type: "body", text: ln }); }
+      blocks.push({ type: "divider" });
     }
-    await pdfExport("My Recipes",l.length?l:["(empty)"],`my_recipes_${todayISO()}.pdf`);
+    await pdfExport("My Recipes", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `my_recipes_${todayISO()}.pdf`);
   }
   async function exportPlanPDF() {
     const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
-    const lines=[];
+    const blocks=[];
     let lastDate="";
     for(const p of s){
       if(p.date!==lastDate){
-        if(lastDate) lines.push("");
+        if(lastDate) blocks.push({ type: "divider" });
         const d=new Date(p.date+"T12:00:00");
-        lines.push(d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}));
+        blocks.push({ type: "h1", text: d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}) });
         lastDate=p.date;
       }
-      lines.push(`  ${p.meal}: ${p.title} (${p.servings} servings)`);
+      blocks.push({ type: "body", text: `${p.meal}: ${cleanExportText(p.title)} (${p.servings} servings)` });
     }
-    await pdfExport("Meal Plan",lines.length?lines:["(empty)"],`meal_plan_${todayISO()}.pdf`);
+    await pdfExport("Meal Plan", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `meal_plan_${todayISO()}.pdf`);
   }
   async function exportShopPDF() {
-    await pdfExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.pdf`);
+    const blocks = shopItems.map(it => ({ type: "body", text: `${it.checked ? "☑" : "☐"} ${cleanExportText(it.text)}` }));
+    await pdfExport("Shopping List", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `shopping_list_${todayISO()}.pdf`);
   }
-  async function docxExport(title,paras,fn) {
+  async function docxExport(title, blocks, fn) {
     await lazyDocx();
-    const{Document,Packer,Paragraph,TextRun}=window.docx;
-    const doc=new Document({sections:[{children:[new Paragraph({children:[new TextRun({text:title,bold:true,size:32})]}), ...paras.map(t=>new Paragraph(t))]}]});
-    downloadBlob(await Packer.toBlob(doc),fn);
+    const { Document, Packer, Paragraph, TextRun } = window.docx;
+    const children = [
+      new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 36 })], alignment: "center", spacing: { after: 120 } })
+    ];
+    for (const b of blocks) {
+      const block = typeof b === "string" ? { type: "body", text: b } : b;
+      if (!block.text && block.type !== "divider") continue;
+      if (block.type === "title") children.push(new Paragraph({ children: [new TextRun({ text: block.text, bold: true, size: 28 })], spacing: { before: 120, after: 60 } }));
+      else if (block.type === "h1") children.push(new Paragraph({ children: [new TextRun({ text: block.text, bold: true, size: 24 })], spacing: { before: 120, after: 60 } }));
+      else if (block.type === "h2") children.push(new Paragraph({ children: [new TextRun({ text: block.text, bold: true, size: 22 })], spacing: { before: 80, after: 40 } }));
+      else if (block.type === "divider") children.push(new Paragraph({ children: [new TextRun({ text: "—", color: "CCCCCC" })], spacing: { before: 60, after: 60 } }));
+      else children.push(new Paragraph({ children: [new TextRun({ text: block.text, size: 22 })], spacing: { after: 120 } }));
+    }
+    const doc = new Document({ sections: [{ children }] });
+    downloadBlob(await Packer.toBlob(doc), fn);
   }
   async function exportMyRecipesDOCX() {
-    const p=[];
+    const blocks=[];
     for(const r of myRecipes){
-      p.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]${r.time?"  • "+r.time:""}`);
+      blocks.push({ type: "h1", text: `${cleanExportText(r.title||"(untitled)")}${(r.tags||[]).length ? `  [${(r.tags||[]).map(cleanExportText).join(", ")}]` : ""}${r.time ? "  • "+r.time : ""}` });
       const { ingredients, instructions } = formatRecipeForExport(r);
-      if(ingredients){ p.push("Ingredients:"); p.push(...ingredients.split("\n")); }
-      if(instructions){ p.push("Instructions:"); p.push(...instructions.split("\n")); }
-      p.push("—");
+      if(ingredients){ blocks.push({ type: "h2", text: "Ingredients" }); for(const ln of ingredients.split("\n")) blocks.push({ type: "body", text: ln }); }
+      if(instructions){ blocks.push({ type: "h2", text: "Instructions" }); for(const ln of instructions.split("\n")) blocks.push({ type: "body", text: ln }); }
+      blocks.push({ type: "divider" });
     }
-    await docxExport("My Recipes",p.length?p:["(empty)"],`my_recipes_${todayISO()}.docx`);
+    await docxExport("My Recipes", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `my_recipes_${todayISO()}.docx`);
   }
   async function exportPlanDOCX() {
     const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
-    const lines=[];
+    const blocks=[];
     let lastDate="";
     for(const p of s){
       if(p.date!==lastDate){
-        if(lastDate) lines.push("");
+        if(lastDate) blocks.push({ type: "divider" });
         const d=new Date(p.date+"T12:00:00");
-        lines.push(d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}));
+        blocks.push({ type: "h1", text: d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",year:"numeric"}) });
         lastDate=p.date;
       }
-      lines.push(`  ${p.meal}: ${p.title} (${p.servings} servings)`);
+      blocks.push({ type: "body", text: `${p.meal}: ${cleanExportText(p.title)} (${p.servings} servings)` });
     }
-    await docxExport("Meal Plan",lines.length?lines:["(empty)"],`meal_plan_${todayISO()}.docx`);
+    await docxExport("Meal Plan", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `meal_plan_${todayISO()}.docx`);
   }
   async function exportShopDOCX() {
-    await docxExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.docx`);
+    const blocks = shopItems.map(it => ({ type: "body", text: `${it.checked ? "☑" : "☐"} ${cleanExportText(it.text)}` }));
+    await docxExport("Shopping List", blocks.length ? blocks : [{ type: "body", text: "(empty)" }], `shopping_list_${todayISO()}.docx`);
   }
 
   $("btnExportMineCSV").addEventListener("click", exportMyRecipesCSV);
