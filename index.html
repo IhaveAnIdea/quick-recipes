@@ -1050,7 +1050,8 @@
       vN = Math.sqrt(vN) || 1;
       let score = d / (qNorm * vN);
 
-      // keyword scoring — recipes MUST contain query words to rank well
+      // keyword scoring — boost exact word matches, but trust the semantic
+      // model for conceptual matches (e.g. "fried potatoes" → "french fries")
       if (queryWords.length) {
         const titleLow = (r.title || "").toLowerCase();
         const ingLow = (r.ingredients || "").toLowerCase();
@@ -1062,15 +1063,19 @@
         }
         const totalHits = titleHits + bodyHits;
         if (totalHits === 0) {
-          // NO query words found anywhere — heavy penalty, pushes below keyword matches
-          score -= 0.30;
+          // No literal keyword match — apply a MILD penalty that scales
+          // inversely with semantic confidence. High cosine = small penalty.
+          // This lets "french fries" survive for query "fried potatoes"
+          // but still suppresses truly irrelevant high-cosine coincidences.
+          const penalty = score > 0.55 ? 0.05 : score > 0.40 ? 0.12 : 0.25;
+          score -= penalty;
         } else {
           // title keyword match is very valuable
-          score += (titleHits / queryWords.length) * 0.25;
+          score += (titleHits / queryWords.length) * 0.20;
           // body keyword match is moderately valuable
-          score += (bodyHits / queryWords.length) * 0.10;
+          score += (bodyHits / queryWords.length) * 0.08;
           // bonus when ALL query words appear somewhere
-          if (totalHits === queryWords.length) score += 0.10;
+          if (totalHits === queryWords.length) score += 0.08;
         }
       }
 
