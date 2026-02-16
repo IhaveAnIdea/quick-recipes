@@ -1100,6 +1100,21 @@
   let builtMeta = null;
   let builtRecipes = [];
   let builtVectors = null;
+  let mobileReleaseTimer = null;
+
+  // Proactively release heavy memory after inactivity to avoid iOS Safari
+  // "this webpage has reloaded because it is using significant memory".
+  function scheduleMobileRelease() {
+    if (!isMobile) return;
+    if (mobileReleaseTimer) clearTimeout(mobileReleaseTimer);
+    mobileReleaseTimer = setTimeout(() => {
+      mobileReleaseTimer = null;
+      builtVectors = null;
+      builtRecipes = [];
+      if (embedWorker) { embedWorker.terminate(); embedWorker = null; }
+      setStatus("Ready", "Tap search to load 3,895 recipes.");
+    }, 15000);
+  }
 
   function bruteForceSearchRanked(queryVec, queryWords, diet, tagFilter, maxResults = 50) {
     const dim = builtMeta.dim;
@@ -1516,6 +1531,7 @@
     // On mobile: yield to browser before heavy work — lets iOS process the tap
     // and avoids race conditions that can trigger reload/jetsam.
     if (isMobile) await new Promise(r => setTimeout(r, 50));
+    if (isMobile && mobileReleaseTimer) { clearTimeout(mobileReleaseTimer); mobileReleaseTimer = null; }
 
     // If dataset not loaded yet, try to load it first
     if (!builtRecipes.length) {
@@ -1584,6 +1600,7 @@
         setStatus("Found", `Result ${searchIdx+1}/${searchResults.length}. (keyword mode)`);
       }
       setProgress(0);
+      if (isMobile) scheduleMobileRelease();
 
     } catch(e) {
       console.error(e);
