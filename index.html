@@ -458,7 +458,7 @@
     <div class="container">
       <div class="search-hero">
         <h1>What do you want to cook?</h1>
-        <p>Search <span id="countText">18,000+</span> recipes by meaning, not just keywords.</p>
+        <p>Search <span id="countText">3,895</span> recipes with full instructions.</p>
       </div>
 
       <div class="search-box">
@@ -470,7 +470,7 @@
         <div class="status-dot" id="statusDot2"></div>
         <div style="flex:1">
           <div id="statusText"><b>Ready to load</b></div>
-          <div class="small" id="statusSub">Tap "Load Recipes" to download the dataset (one-time, ~46 MB).</div>
+          <div class="small" id="statusSub">Tap "Load Recipes" to download the dataset (one-time, ~11 MB).</div>
         </div>
         <button class="btn btn-primary btn-sm" id="btnLoad" style="flex-shrink:0">Load Recipes</button>
       </div>
@@ -516,10 +516,6 @@
           </div>
         </div>
 
-        <label class="filter-toggle mt-12" style="cursor:pointer">
-          <div class="label">Only show recipes with instructions</div>
-          <input type="checkbox" id="filterHasInstructions" style="width:20px; height:20px; accent-color:var(--primary);" />
-        </label>
       </details>
 
       <!-- RESULT -->
@@ -684,7 +680,7 @@
       <div class="card">
         <h2>About</h2>
         <div class="small">
-          <p>Semantic search over <b>18,000+ recipes</b> using prebuilt embeddings (Xenova/all-MiniLM-L6-v2).</p>
+          <p>Semantic search over <b>3,895 recipes</b> (all with full cooking instructions) using prebuilt embeddings (Xenova/all-MiniLM-L6-v2).</p>
           <p>Assets served statically — works on GitHub Pages, localhost, or any static host.</p>
           <p class="mono mt-12">assets/recipes.json &bull; assets/embeddings.bin &bull; assets/dataset_meta.json</p>
         </div>
@@ -950,7 +946,7 @@
   let builtRecipes = [];
   let builtVectors = null;
 
-  function bruteForceSearchRanked(queryVec, queryWords, diet, tagFilter, requireInstructions, maxResults = 50) {
+  function bruteForceSearchRanked(queryVec, queryWords, diet, tagFilter, maxResults = 50) {
     const dim = builtMeta.dim;
     const count = builtMeta.count;
     const vecs = builtVectors;
@@ -968,8 +964,6 @@
       // hard filters
       if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && violatesDiet(r, diet)) continue;
       if (tagFilter && !(r.tags || []).join(" ").toLowerCase().includes(tagFilter)) continue;
-      if (requireInstructions && !(r.instructions && r.instructions.trim().length > 10)) continue;
-
       // cosine similarity
       const off = n * dim;
       let d = 0, vN = 0;
@@ -1179,7 +1173,7 @@
   }
 
   // Keyword-only fallback (no embedding model needed)
-  function keywordSearch(query, diet, tagFilter, requireInst, maxResults = 50) {
+  function keywordSearch(query, diet, tagFilter, maxResults = 50) {
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
     if (!words.length) return [];
     const scored = [];
@@ -1187,8 +1181,6 @@
       if (!r) continue;
       if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && violatesDiet(r, diet)) continue;
       if (tagFilter && !(r.tags || []).join(" ").toLowerCase().includes(tagFilter)) continue;
-      if (requireInst && !(r.instructions && r.instructions.trim().length > 10)) continue;
-
       const titleLow = (r.title || "").toLowerCase();
       const ingLow = (r.ingredients || "").toLowerCase();
       const tagsLow = (r.tags || []).join(" ").toLowerCase();
@@ -1222,7 +1214,6 @@
     $("btnSearch").disabled = true;
     const tagFilter = ($("tagFilter")?.value || "").trim().toLowerCase();
     const diet = getDietState();
-    const requireInst = !!$("filterHasInstructions").checked;
     const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
 
     try {
@@ -1238,14 +1229,13 @@
 
         setStatus("Searching...", "Scanning recipes.");
         setProgress(60);
-        builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, requireInst, 50);
+        builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, 50);
         usedSemantic = true;
 
         // also scan user's own recipes
         if (myRecipes.length) {
           for (const r of myRecipes) {
             if (!r.embedding_b64) continue;
-            if (requireInst && !(r.steps && r.steps.trim().length > 10)) continue;
             const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
             if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
             const rv = base64ToFloat(r.embedding_b64);
@@ -1264,7 +1254,7 @@
         // Embedding model failed — fall back to keyword search
         console.warn("[search] embedding failed, using keyword fallback:", embedErr);
         setStatus("Searching...", "Using keyword search (model unavailable).");
-        builtResults = keywordSearch(query, diet, tagFilter, requireInst, 50);
+        builtResults = keywordSearch(query, diet, tagFilter, 50);
       }
 
       setProgress(90);

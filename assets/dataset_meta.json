@@ -1,8 +1,8 @@
 {
-  "buildId": "2026-02-15",
+  "buildId": "2026-02-16",
   "model": "Xenova/all-MiniLM-L6-v2",
   "dim": 384,
-  "count": 18840,
+  "count": 3895,
   "search": "brute-force-cosine",
   "sources": [
     {
