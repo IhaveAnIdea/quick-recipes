@@ -1,0 +1,19 @@
+{
+  "buildId": "2026-02-15",
+  "model": "Xenova/all-MiniLM-L6-v2",
+  "dim": 384,
+  "count": 18840,
+  "search": "brute-force-cosine",
+  "sources": [
+    {
+      "name": "Wikibooks Cookbook",
+      "license": "CC BY-SA 4.0",
+      "ref": "https://en.wikibooks.org/wiki/Cookbook:Recipes"
+    },
+    {
+      "name": "Open Recipes / open-recipe-data",
+      "license": "CC BY 3.0",
+      "ref": "https://github.com/jakevdp/open-recipe-data"
+    }
+  ]
+}

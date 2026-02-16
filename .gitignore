@@ -1,0 +1,6 @@
+node_modules/
+.hf-cache/
+.DS_Store
+Thumbs.db
+*.log
+assets/hnsw.index

@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quick Recipes</title>
+  <meta name="description" content="Instant semantic recipe search. Find your best recipe match in 18,000+ dishes. Works offline." />
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --surface2: #f0f1f4;
+      --text: #111827;
+      --text2: #4b5563;
+      --border: #e5e7eb;
+      --primary: #2563eb;
+      --primary-light: #dbeafe;
+      --primary-dark: #1d4ed8;
+      --good: #059669;
+      --good-light: #d1fae5;
+      --warn: #d97706;
+      --warn-light: #fef3c7;
+      --danger: #dc2626;
+      --danger-light: #fee2e2;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
+      --shadow: 0 4px 12px rgba(0,0,0,.08);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,.12);
+      --radius: 14px;
+      --radius-sm: 10px;
+      --nav-h: 56px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #23262f;
+      --text: #f3f4f6;
+      --text2: #9ca3af;
+      --border: #2d3039;
+      --primary: #60a5fa;
+      --primary-light: rgba(96,165,250,.15);
+      --primary-dark: #3b82f6;
+      --good: #34d399;
+      --good-light: rgba(52,211,153,.12);
+      --warn: #fbbf24;
+      --warn-light: rgba(251,191,36,.12);
+      --danger: #f87171;
+      --danger-light: rgba(248,113,113,.12);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+      --shadow: 0 4px 12px rgba(0,0,0,.3);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,.4);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { height: 100%; -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── TOP NAV ────────────────────────────── */
+    .navbar {
+      position: sticky; top: 0; z-index: 100;
+      height: var(--nav-h);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+    .nav-brand {
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: -.3px;
+      margin-right: 16px;
+      white-space: nowrap;
+    }
+    .nav-tabs { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
+    .nav-tab {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text2);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, color .15s;
+    }
+    .nav-tab:hover { background: var(--surface2); }
+    .nav-tab.active { background: var(--primary-light); color: var(--primary); }
+    .nav-actions { display: flex; gap: 6px; align-items: center; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background .15s;
+    }
+    .icon-btn:hover { background: var(--border); }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--warn);
+      flex-shrink: 0;
+    }
+    .status-dot.ok { background: var(--good); }
+    .status-dot.err { background: var(--danger); }
+
+    /* ── LAYOUT ─────────────────────────────── */
+    .container { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; }
+    .container-wide { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── COMMON ELEMENTS ────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+    .card + .card { margin-top: 16px; }
+    .card h2 { margin: 0 0 4px; font-size: 18px; font-weight: 900; }
+    .card-sub { color: var(--text2); font-size: 13px; margin-bottom: 16px; }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
+    }
+    textarea { min-height: 100px; resize: vertical; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 11px 20px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .12s;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--surface2); }
+    .btn:active { transform: scale(.98); }
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+    .btn-warn { background: var(--warn-light); border-color: var(--warn); color: var(--warn); }
+    .btn-danger { background: var(--danger-light); border-color: var(--danger); color: var(--danger); }
+    .btn-sm { padding: 7px 12px; font-size: 12px; }
+    .btn-ghost { background: transparent; border-color: var(--border); }
+
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 0; }
+    .row .shrink { flex: 0 0 auto; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mt-20 { margin-top: 20px; }
+    .muted { color: var(--text2); }
+    .small { font-size: 13px; color: var(--text2); line-height: 1.5; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    .bold { font-weight: 800; }
+    .hr { height: 1px; background: var(--border); margin: 16px 0; }
+    .hidden { display: none !important; }
+
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--primary-light);
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+    /* ── PROGRESS BAR ───────────────────────── */
+    .progress-wrap {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--surface2);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary), var(--good));
+      border-radius: 999px;
+      transition: width .3s ease;
+    }
+
+    /* ── SEARCH PAGE ────────────────────────── */
+    .search-hero {
+      text-align: center;
+      padding: 32px 0 8px;
+    }
+    .search-hero h1 {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -.5px;
+      margin: 0;
+    }
+    .search-hero p {
+      color: var(--text2);
+      font-size: 15px;
+      margin: 6px 0 0;
+    }
+    @media (max-width: 480px) {
+      .search-hero h1 { font-size: 22px; }
+      .search-hero p { font-size: 13px; }
+    }
+
+    .search-box {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .search-box input {
+      flex: 1;
+      font-size: 16px;
+      padding: 14px 18px;
+      border-radius: var(--radius);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .search-box input:focus {
+      border-color: var(--primary);
+      box-shadow: var(--shadow), 0 0 0 3px var(--primary-light);
+    }
+    .search-box .btn {
+      padding: 14px 28px;
+      font-size: 16px;
+      border-radius: var(--radius);
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text2);
+    }
+
+    .filters-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .filters-row > div { flex: 1; min-width: 140px; }
+    .filters-row label { display: block; font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 4px; }
+    .filters-row select { font-size: 13px; padding: 8px 10px; }
+
+    .filter-toggle {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .filter-toggle .label { flex: 1; font-weight: 800; font-size: 14px; }
+    .switch {
+      width: 42px; height: 24px; border-radius: 999px;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      position: relative; transition: background .2s, border-color .2s;
+      flex-shrink: 0;
+    }
+    .switch .knob {
+      width: 18px; height: 18px; border-radius: 999px;
+      background: #fff; border: 1px solid var(--border);
+      position: absolute; top: 2px; left: 2px;
+      transition: left .2s; box-shadow: var(--shadow-sm);
+    }
+    .switch.on { background: var(--primary); border-color: var(--primary); }
+    .switch.on .knob { left: 20px; }
+
+    /* ── RESULT CARD ────────────────────────── */
+    .result-card { margin-top: 20px; }
+    .result-title {
+      font-size: 22px;
+      font-weight: 900;
+      margin: 0;
+      letter-spacing: -.3px;
+    }
+    .result-meta {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      margin-top: 6px; font-size: 13px; color: var(--text2);
+    }
+    .match-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 10px; border-radius: 999px;
+      background: var(--good-light); color: var(--good);
+      font-weight: 800; font-size: 12px;
+    }
+    .section-heading {
+      font-size: 15px;
+      font-weight: 900;
+      margin: 20px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text2);
+    }
+    .ingredient-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .ingredient-list li {
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .ingredient-list li:last-child { border-bottom: none; }
+    .ingredient-list li::before {
+      content: "";
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+    .instructions-text {
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .no-instructions {
+      font-size: 13px;
+      color: var(--text2);
+      font-style: italic;
+    }
+    .result-actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+
+    /* ── LISTS (My Recipes, Plan, Shop) ───── */
+    .list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .list-item {
+      display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      transition: box-shadow .12s;
+    }
+    .list-item:hover { box-shadow: var(--shadow); }
+    .list-item h3 { margin: 0; font-size: 14px; font-weight: 800; }
+    .list-item .meta { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+    .check-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .check-row input[type="checkbox"] {
+      width: 18px; height: 18px; margin-top: 2px;
+      accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+    .check-row .text { flex: 1; }
+    .strike { text-decoration: line-through; opacity: .5; }
+
+    /* ── RESPONSIVE ─────────────────────────── */
+    @media (max-width: 640px) {
+      .navbar { padding: 0 10px; }
+      .nav-brand { font-size: 15px; margin-right: 8px; }
+      .nav-tab { padding: 6px 10px; font-size: 12px; }
+      .search-box { flex-direction: column; }
+      .search-box .btn { width: 100%; }
+      .container { padding: 12px 12px 32px; }
+      .result-title { font-size: 18px; }
+    }
+
+    /* Two-column layout for planner/my-recipes on desktop */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 780px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ── NAVBAR ──────────────────────────────── -->
+  <nav class="navbar">
+    <div class="nav-brand">Quick Recipes</div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-tab="Search">Search</button>
+      <button class="nav-tab" data-tab="MyRecipes">My Recipes</button>
+      <button class="nav-tab" data-tab="Planner">Planner</button>
+      <button class="nav-tab" data-tab="Settings">Settings</button>
+    </div>
+    <div class="nav-actions">
+      <div class="status-dot" id="statusDot" title="Dataset not loaded"></div>
+      <button class="icon-btn" id="btnTheme" title="Toggle theme">&#9789;</button>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════
+       SEARCH PAGE
+  ═══════════════════════════════════════════════ -->
+  <div id="pageSearch" class="page active">
+    <div class="container">
+      <div class="search-hero">
+        <h1>What do you want to cook?</h1>
+        <p>Search <span id="countText">18,000+</span> recipes by meaning, not just keywords.</p>
+      </div>
+
+      <div class="search-box">
+        <input id="q" type="search" placeholder='Try "spicy chicken", "vegan dessert", "quick pasta no dairy"' autocomplete="off" />
+        <button class="btn btn-primary" id="btnSearch">Search</button>
+      </div>
+
+      <div class="status-bar" id="statusBar">
+        <div class="status-dot" id="statusDot2"></div>
+        <div style="flex:1">
+          <div id="statusText"><b>Loading...</b></div>
+          <div class="small" id="statusSub">Downloading recipe data (one-time, cached after).</div>
+        </div>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bar" id="bar"></div>
+      </div>
+
+      <!-- Filters (collapsible) -->
+      <details class="mt-12" id="filterDetails">
+        <summary style="cursor:pointer; font-weight:700; font-size:14px; color:var(--text2);">Filters &amp; Diet Mode</summary>
+
+        <div class="filters-row">
+          <div>
+            <label>Tag filter</label>
+            <input id="tagFilter" placeholder="e.g. vegan, soup, breakfast" style="font-size:13px; padding:8px 10px;" />
+          </div>
+          <div>
+            <label>Diet preset</label>
+            <select id="dietPreset">
+              <option value="none">None</option>
+              <option value="vegan">Vegan</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="glutenfree">Gluten-free</option>
+              <option value="dairyfree">Dairy-free</option>
+              <option value="nutfree">Nut-free</option>
+              <option value="keto">Keto</option>
+              <option value="lowsodium">Low-sodium</option>
+            </select>
+          </div>
+          <div>
+            <label>Strictness</label>
+            <select id="dietStrict">
+              <option value="strict" selected>Strict (exclude)</option>
+              <option value="soft">Soft (down-rank)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="filter-toggle mt-12" id="dietToggle">
+          <div class="label">Enable diet filter</div>
+          <div class="switch" id="dietSwitch" role="switch" aria-checked="false" tabindex="0">
+            <div class="knob"></div>
+          </div>
+        </div>
+
+        <label class="filter-toggle mt-12" style="cursor:pointer">
+          <div class="label">Only show recipes with instructions</div>
+          <input type="checkbox" id="filterHasInstructions" style="width:20px; height:20px; accent-color:var(--primary);" />
+        </label>
+      </details>
+
+      <!-- RESULT -->
+      <div id="resultCard" class="card result-card hidden">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <h2 class="result-title" id="rTitle" style="flex:1; min-width:0;"></h2>
+          <button class="btn btn-ghost btn-sm" id="btnNext" title="Show next match">Next &rarr;</button>
+        </div>
+        <div class="result-meta">
+          <span id="rMatchBadge" class="match-badge"></span>
+          <span id="rResultNum" class="small"></span>
+          <span id="rSource"></span>
+          <a id="rLink" href="#" target="_blank" rel="noreferrer" style="display:none">View source</a>
+        </div>
+        <div class="tags" id="rTags"></div>
+
+        <div class="section-heading">Ingredients</div>
+        <ul class="ingredient-list" id="rIngredients"></ul>
+
+        <div class="section-heading">Instructions</div>
+        <div id="rInstructions"></div>
+
+        <div class="result-actions">
+          <button class="btn btn-primary" id="btnAddToPlan">Add to Plan</button>
+          <button class="btn" id="btnSaveAsMine">Save to My Recipes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MY RECIPES PAGE
+  ═══════════════════════════════════════════════ -->
+  <div id="pageMyRecipes" class="page">
+    <div class="container-wide">
+      <div class="grid-2">
+        <div class="card">
+          <h2>My Recipes</h2>
+          <div class="card-sub">Private to this browser. Create, edit, export.</div>
+
+          <div class="row">
+            <button class="btn btn-primary" id="btnNewMine">New Recipe</button>
+            <button class="btn btn-sm" id="btnExportMineCSV">CSV</button>
+            <button class="btn btn-sm" id="btnExportMinePDF">PDF</button>
+            <button class="btn btn-sm" id="btnExportMineDOCX">DOCX</button>
+          </div>
+          <input id="mineSearch" placeholder="Search my recipes..." class="mt-12" />
+          <div class="list" id="mineList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Edit Recipe</h2>
+          <input id="mTitle" placeholder="Recipe title" />
+          <div class="row mt-12">
+            <input id="mTags" placeholder="Tags (comma separated)" />
+            <input id="mTime" placeholder="Time, e.g. 20 min" style="max-width:140px" />
+          </div>
+          <textarea id="mIngredients" class="mt-12" placeholder="Ingredients (one per line)"></textarea>
+          <textarea id="mSteps" class="mt-12" placeholder="Instructions / Steps"></textarea>
+          <textarea id="mNotes" class="mt-12" placeholder="Notes (optional)"></textarea>
+          <div class="row mt-12">
+            <button class="btn btn-primary" id="btnSaveMine">Save</button>
+            <button class="btn btn-danger btn-sm" id="btnDeleteMine">Delete</button>
+            <button class="btn btn-ghost btn-sm" id="btnClearMine">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       PLANNER PAGE
+  ═══════════════════════════════════════════════ -->
+  <div id="pagePlanner" class="page">
+    <div class="container-wide">
+      <div class="grid-2">
+        <div class="card">
+          <h2>Meal Planner</h2>
+          <div class="card-sub">Schedule recipes and auto-generate a shopping list.</div>
+
+          <div class="row">
+            <div><label class="small bold">Date</label><input id="pDate" type="date" /></div>
+            <div><label class="small bold">Meal</label>
+              <select id="pMeal">
+                <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option>
+              </select>
+            </div>
+            <div><label class="small bold">Servings</label><input id="pServings" type="number" min="1" value="2" /></div>
+          </div>
+          <div class="row mt-12">
+            <input id="pPick" placeholder="Type a recipe title (from Search or My Recipes)" />
+            <button class="btn btn-primary shrink" id="btnPlanAdd">Add</button>
+          </div>
+          <div class="row mt-12">
+            <button class="btn btn-sm" id="btnPlanExportCSV">CSV</button>
+            <button class="btn btn-sm" id="btnPlanExportPDF">PDF</button>
+            <button class="btn btn-sm" id="btnPlanExportDOCX">DOCX</button>
+          </div>
+          <div class="status-bar mt-12"><span id="planStatus">Ready.</span></div>
+          <div class="list" id="planList"></div>
+        </div>
+
+        <div class="card">
+          <h2>Shopping List</h2>
+          <div class="card-sub">Auto-generated from plan + manual items. Editable.</div>
+
+          <div class="row">
+            <input id="shopNew" placeholder="Add item, e.g. 2 lemons" />
+            <button class="btn btn-primary shrink" id="btnShopAdd">Add</button>
+          </div>
+          <div class="row mt-12">
+            <button class="btn btn-sm" id="btnShopExportCSV">CSV</button>
+            <button class="btn btn-sm" id="btnShopExportPDF">PDF</button>
+            <button class="btn btn-sm" id="btnShopExportDOCX">DOCX</button>
+            <button class="btn btn-ghost btn-sm" id="btnShopClearDone">Clear checked</button>
+            <button class="btn btn-danger btn-sm" id="btnShopWipe">Wipe</button>
+          </div>
+          <button class="btn btn-warn btn-sm mt-12" id="btnRebuildShop">Rebuild from plan</button>
+          <div class="list" id="shopList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       SETTINGS PAGE
+  ═══════════════════════════════════════════════ -->
+  <div id="pageSettings" class="page">
+    <div class="container">
+      <div class="card">
+        <h2>Data</h2>
+        <div class="card-sub">All personal data stays in your browser (IndexedDB). Nothing is sent to a server.</div>
+        <div class="row">
+          <button class="btn btn-primary" id="btnExportAll">Export ALL (JSON)</button>
+          <button class="btn" id="btnImportAll">Import (JSON)</button>
+          <input id="filePick" type="file" accept="application/json" style="display:none" />
+        </div>
+        <div class="row mt-16">
+          <button class="btn btn-danger" id="btnWipeUserData">Wipe all user data</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>About</h2>
+        <div class="small">
+          <p>Semantic search over <b>18,000+ recipes</b> using prebuilt embeddings (Xenova/all-MiniLM-L6-v2).</p>
+          <p>Assets served statically — works on GitHub Pages, localhost, or any static host.</p>
+          <p class="mono mt-12">assets/recipes.json &bull; assets/embeddings.bin &bull; assets/dataset_meta.json</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+  /* ══════════════════════════════════════════════
+     UTILITIES
+  ══════════════════════════════════════════════ */
+  const $ = id => document.getElementById(id);
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const esc = (s="") => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+  const uid = () => "u_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+  const todayISO = () => new Date().toISOString().slice(0,10);
+
+  function setProgress(p) { $("bar").style.width = `${clamp(p,0,100)}%`; }
+  function setStatus(msg, sub="") {
+    $("statusText").innerHTML = `<b>${esc(msg)}</b>`;
+    $("statusSub").textContent = sub;
+  }
+
+  window.addEventListener("unhandledrejection", e => {
+    console.error("unhandledrejection", e.reason);
+    setStatus("Error", String(e.reason?.message || e.reason || "Unknown"));
+    setProgress(0);
+  });
+  window.addEventListener("error", e => {
+    console.error("error", e.error || e.message);
+    setStatus("Error", String(e.error?.message || e.message || "Unknown"));
+    setProgress(0);
+  });
+
+  /* ── Theme ─────────────────────────────────── */
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem("theme", t);
+  }
+  applyTheme(localStorage.getItem("theme") || "light");
+  $("btnTheme").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") || "light";
+    applyTheme(cur === "light" ? "dark" : "light");
+  });
+
+  /* ── Top nav tabs ──────────────────────────── */
+  const pages = {
+    Search: $("pageSearch"),
+    MyRecipes: $("pageMyRecipes"),
+    Planner: $("pagePlanner"),
+    Settings: $("pageSettings"),
+  };
+  function setTab(name) {
+    Object.values(pages).forEach(p => p.classList.remove("active"));
+    pages[name].classList.add("active");
+    document.querySelectorAll(".nav-tab").forEach(t =>
+      t.classList.toggle("active", t.dataset.tab === name)
+    );
+  }
+  document.querySelectorAll(".nav-tab").forEach(t =>
+    t.addEventListener("click", () => setTab(t.dataset.tab))
+  );
+
+  /* ══════════════════════════════════════════════
+     INDEXEDDB — user data
+  ══════════════════════════════════════════════ */
+  const USER_DB = "recipe_planner_user_v1";
+  const USER_VER = 1;
+  const STORE_RECIPES = "my_recipes";
+  const STORE_PLAN = "plan_items";
+  const STORE_SHOP = "shopping_items";
+  const STORE_PREFS = "prefs";
+
+  function openUserDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(USER_DB, USER_VER);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_RECIPES)) db.createObjectStore(STORE_RECIPES, { keyPath: "id" });
+        if (!db.objectStoreNames.contains(STORE_PLAN)) db.createObjectStore(STORE_PLAN, { keyPath: "id" });
+        if (!db.objectStoreNames.contains(STORE_SHOP)) db.createObjectStore(STORE_SHOP, { keyPath: "id" });
+        if (!db.objectStoreNames.contains(STORE_PREFS)) db.createObjectStore(STORE_PREFS);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbAll(store) {
+    const db = await openUserDB();
+    return new Promise((r, j) => { const q = db.transaction(store,"readonly").objectStore(store).getAll(); q.onsuccess=()=>r(q.result||[]); q.onerror=()=>j(q.error); });
+  }
+  async function idbPut(store, val, key) {
+    const db = await openUserDB();
+    return new Promise((r, j) => { const tx = db.transaction(store,"readwrite"); const q = (store===STORE_PREFS)?tx.objectStore(store).put(val,key):tx.objectStore(store).put(val); q.onsuccess=()=>r(true); q.onerror=()=>j(q.error); });
+  }
+  async function idbGet(store, key) {
+    const db = await openUserDB();
+    return new Promise((r, j) => { const q = db.transaction(store,"readonly").objectStore(store).get(key); q.onsuccess=()=>r(q.result); q.onerror=()=>j(q.error); });
+  }
+  async function idbDel(store, key) {
+    const db = await openUserDB();
+    return new Promise((r, j) => { const q = db.transaction(store,"readwrite").objectStore(store).delete(key); q.onsuccess=()=>r(true); q.onerror=()=>j(q.error); });
+  }
+  async function idbClear(store) {
+    const db = await openUserDB();
+    return new Promise((r, j) => { const q = db.transaction(store,"readwrite").objectStore(store).clear(); q.onsuccess=()=>r(true); q.onerror=()=>j(q.error); });
+  }
+
+  /* ══════════════════════════════════════════════
+     ASSET CACHE (blobs in IndexedDB)
+  ══════════════════════════════════════════════ */
+  const ASSET_DB = "recipe_hnsw_assets_v1";
+  const ASSET_VER = 1;
+  const ASSET_STORE = "blobs";
+  function openAssetDB() {
+    return new Promise((r, j) => {
+      const req = indexedDB.open(ASSET_DB, ASSET_VER);
+      req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(ASSET_STORE)) db.createObjectStore(ASSET_STORE); };
+      req.onsuccess = () => r(req.result);
+      req.onerror = () => j(req.error);
+    });
+  }
+  async function assetPut(key, val) {
+    const db = await openAssetDB();
+    return new Promise((r, j) => { const tx = db.transaction(ASSET_STORE,"readwrite"); tx.objectStore(ASSET_STORE).put(val,key); tx.oncomplete=()=>r(true); tx.onerror=()=>j(tx.error); });
+  }
+  async function assetGet(key) {
+    const db = await openAssetDB();
+    return new Promise((r, j) => { const q = db.transaction(ASSET_STORE,"readonly").objectStore(ASSET_STORE).get(key); q.onsuccess=()=>r(q.result); q.onerror=()=>j(q.error); });
+  }
+
+  async function fetchWithProgress(url, onProgress) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Fetch failed: ${url} (${res.status})`);
+    const total = Number(res.headers.get("content-length")) || 0;
+    if (!res.body || typeof res.body.getReader !== "function") {
+      const buf = await res.arrayBuffer();
+      if (onProgress) onProgress(buf.byteLength, total || buf.byteLength);
+      return buf;
+    }
+    const reader = res.body.getReader();
+    const chunks = []; let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+      if (onProgress) onProgress(received, total);
+    }
+    const out = new Uint8Array(received); let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+    return out.buffer;
+  }
+
+  async function fetchOrCache(url, cacheKey, pBase=0, pSpan=0) {
+    const cached = await assetGet(cacheKey);
+    if (cached) return cached;
+    const buf = await fetchWithProgress(url, (got, total) => {
+      if (!pSpan) return;
+      const p = total > 0 ? pBase + (got/total)*pSpan : pBase + Math.min(pSpan*.9, pSpan*(got/5e6));
+      setProgress(p);
+    });
+    await assetPut(cacheKey, buf);
+    return buf;
+  }
+
+  /* ══════════════════════════════════════════════
+     DIET RULES
+  ══════════════════════════════════════════════ */
+  const DIET_RULES = {
+    vegan: [/\b(egg|eggs|milk|cheese|butter|yogurt|cream|whey|casein|honey|gelatin|beef|pork|chicken|turkey|fish|salmon|tuna|anchovy|shrimp|lamb|bacon)\b/i],
+    vegetarian: [/\b(beef|pork|chicken|turkey|fish|salmon|tuna|anchovy|shrimp|lamb|bacon|gelatin)\b/i],
+    glutenfree: [/\b(wheat|barley|rye|semolina|spelt|farro|bulgur|couscous|pasta|bread|flour|soy sauce)\b/i],
+    dairyfree: [/\b(milk|cheese|butter|yogurt|cream|whey|casein|ghee)\b/i],
+    nutfree: [/\b(almond|walnut|pecan|cashew|hazelnut|pistachio|peanut|nut)\b/i],
+    keto: [/\b(sugar|honey|syrup|bread|pasta|rice|potato|flour|corn|tortilla|cereal)\b/i],
+    lowsodium: [/\b(soy sauce|tamari|fish sauce|bouillon|stock cube|msg|salt|brine|cured)\b/i],
+    none: []
+  };
+  function recipeTextForDiet(r) {
+    return [r.title, (r.tags||[]).join(" "), r.ingredients, r.instructions, r.steps].filter(Boolean).join("\n");
+  }
+  function getDietState() {
+    return {
+      enabled: $("dietSwitch").classList.contains("on"),
+      preset: $("dietPreset").value,
+      strictness: $("dietStrict").value,
+    };
+  }
+  function violatesDiet(r, diet) {
+    if (!diet.enabled || diet.preset === "none") return false;
+    const rules = DIET_RULES[diet.preset] || [];
+    if (!rules.length) return false;
+    return rules.some(re => re.test(recipeTextForDiet(r)));
+  }
+
+  $("dietToggle").addEventListener("click", () => {
+    const on = !$("dietSwitch").classList.contains("on");
+    $("dietSwitch").classList.toggle("on", on);
+    $("dietSwitch").setAttribute("aria-checked", String(on));
+  });
+
+  /* ══════════════════════════════════════════════
+     EMBEDDER (query + user recipes)
+  ══════════════════════════════════════════════ */
+  let extractor = null;
+  const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
+  const hasWebGPU = !!navigator.gpu;
+
+  async function loadEmbedder() {
+    if (extractor) return;
+    setStatus("Loading embedding model...", "First time downloads ~23 MB model (cached after).");
+    setProgress(8);
+    const T = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js");
+    const env = T.env || T.default?.env;
+    if (env) { env.allowLocalModels = false; env.useBrowserCache = true; }
+    const pipe = T.pipeline || T.default?.pipeline;
+    extractor = await pipe("feature-extraction", MODEL_ID, {
+      pooling: "mean", normalize: true,
+      device: hasWebGPU ? "webgpu" : "cpu",
+      dtype: "fp32",
+    });
+    setProgress(0);
+  }
+
+  async function embedText(text) {
+    await loadEmbedder();
+    const out = await extractor(text, { pooling: "mean", normalize: true });
+    if (out?.data) return new Float32Array(out.data);
+    if (out?.tolist) return new Float32Array(out.tolist().flat(Infinity));
+    if (Array.isArray(out)) return new Float32Array(out.flat(Infinity));
+    throw new Error("Unexpected embedding output.");
+  }
+
+  function dot(a,b) { let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+  function norm(a) { return Math.sqrt(dot(a,a))||1; }
+  function cosine(a,b) { return dot(a,b)/(norm(a)*norm(b)); }
+  function floatToBase64(f32) { const u8=new Uint8Array(f32.buffer); let s=""; const ch=0x8000; for(let i=0;i<u8.length;i+=ch) s+=String.fromCharCode.apply(null,u8.subarray(i,i+ch)); return btoa(s); }
+  function base64ToFloat(b64) { const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return new Float32Array(u8.buffer); }
+  function myRecipeToEmbedText(r) { return [r.title,(r.tags||[]).join(", "),r.ingredients,r.steps,r.notes].filter(Boolean).join("\n"); }
+
+  /* ══════════════════════════════════════════════
+     DATASET — brute-force cosine search
+  ══════════════════════════════════════════════ */
+  let builtMeta = null;
+  let builtRecipes = [];
+  let builtVectors = null;
+
+  function bruteForceSearchRanked(queryVec, queryWords, diet, tagFilter, requireInstructions, maxResults = 50) {
+    const dim = builtMeta.dim;
+    const count = builtMeta.count;
+    const vecs = builtVectors;
+
+    let qNorm = 0;
+    for (let i = 0; i < dim; i++) qNorm += queryVec[i] * queryVec[i];
+    qNorm = Math.sqrt(qNorm) || 1;
+
+    const scored = [];
+
+    for (let n = 0; n < count; n++) {
+      const r = builtRecipes[n];
+      if (!r) continue;
+
+      // hard filters
+      if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && violatesDiet(r, diet)) continue;
+      if (tagFilter && !(r.tags || []).join(" ").toLowerCase().includes(tagFilter)) continue;
+      if (requireInstructions && !(r.instructions && r.instructions.trim().length > 10)) continue;
+
+      // cosine similarity
+      const off = n * dim;
+      let d = 0, vN = 0;
+      for (let i = 0; i < dim; i++) {
+        const v = vecs[off + i];
+        d += queryVec[i] * v;
+        vN += v * v;
+      }
+      vN = Math.sqrt(vN) || 1;
+      let score = d / (qNorm * vN);
+
+      // keyword scoring — recipes MUST contain query words to rank well
+      if (queryWords.length) {
+        const titleLow = (r.title || "").toLowerCase();
+        const ingLow = (r.ingredients || "").toLowerCase();
+        const tagsLow = (r.tags || []).join(" ").toLowerCase();
+        let titleHits = 0, bodyHits = 0;
+        for (const w of queryWords) {
+          if (titleLow.includes(w)) titleHits++;
+          else if (ingLow.includes(w) || tagsLow.includes(w)) bodyHits++;
+        }
+        const totalHits = titleHits + bodyHits;
+        if (totalHits === 0) {
+          // NO query words found anywhere — heavy penalty, pushes below keyword matches
+          score -= 0.30;
+        } else {
+          // title keyword match is very valuable
+          score += (titleHits / queryWords.length) * 0.25;
+          // body keyword match is moderately valuable
+          score += (bodyHits / queryWords.length) * 0.10;
+          // bonus when ALL query words appear somewhere
+          if (totalHits === queryWords.length) score += 0.10;
+        }
+      }
+
+      // soft diet penalty
+      if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && violatesDiet(r, diet)) {
+        score -= 0.06;
+      }
+
+      scored.push({ recipe: r, score });
+    }
+
+    // sort descending by score, take top N
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, maxResults);
+  }
+
+  /* ── Ingredient formatting ─────────────────── */
+  function formatIngredients(text) {
+    if (!text) return [];
+    const lines = text.split(/\n/).map(s => s.trim()).filter(Boolean);
+    if (lines.length > 1) return lines.map(l => l.replace(/^[-•*]\s*/, ""));
+
+    // single blob: split before quantity patterns (digit after a letter)
+    const parts = text
+      .replace(/(?<=[a-zA-Z),;.]) (?=\d+[\s/.-]|[½¼¾⅓⅔⅛⅜⅝⅞])/g, "\n")
+      .split("\n")
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    // also split on ALL-CAPS section headers like "SAUSAGE GRAVY"
+    const result = [];
+    for (const part of parts) {
+      if (/^[A-Z][A-Z\s]{2,}$/.test(part.trim())) {
+        result.push(part.trim());
+      } else {
+        result.push(part);
+      }
+    }
+    return result;
+  }
+
+  /* ── Show result card ──────────────────────── */
+  function showResult(recipe, score) {
+    $("resultCard").classList.remove("hidden");
+    $("rTitle").textContent = recipe.title || "(Untitled)";
+    $("rMatchBadge").textContent = score != null ? `${Math.round(score * 100)}% match` : "";
+    $("rSource").textContent = recipe.source || "built-in";
+
+    if (recipe.url) {
+      $("rLink").href = recipe.url;
+      $("rLink").style.display = "";
+    } else {
+      $("rLink").style.display = "none";
+    }
+
+    $("rTags").innerHTML = (recipe.tags || []).slice(0, 10)
+      .map(t => `<span class="tag">${esc(t)}</span>`).join("");
+
+    // Ingredients
+    const ingList = formatIngredients(recipe.ingredients || "");
+    const ul = $("rIngredients");
+    ul.innerHTML = "";
+    if (ingList.length) {
+      for (const line of ingList) {
+        const li = document.createElement("li");
+        li.textContent = line;
+        ul.appendChild(li);
+      }
+    } else {
+      ul.innerHTML = '<li style="color:var(--text2); font-style:italic">No ingredients listed.</li>';
+    }
+
+    // Instructions
+    const inst = recipe.instructions || recipe.steps || "";
+    if (inst.trim()) {
+      $("rInstructions").innerHTML = `<div class="instructions-text">${esc(inst)}</div>`;
+    } else {
+      $("rInstructions").innerHTML = '<div class="no-instructions">No instructions available for this recipe.</div>';
+    }
+
+    $("pPick").value = recipe.title || "";
+    selectedBuilt = recipe;
+  }
+
+  /* ── Auto-init dataset on load ─────────────── */
+  async function initDataset() {
+    try {
+      setStatus("Loading...", "Downloading recipe data (cached after first load).");
+      setProgress(5);
+
+      const metaBuf = await fetchOrCache("assets/dataset_meta.json", "dataset_meta", 5, 5);
+      builtMeta = JSON.parse(new TextDecoder().decode(new Uint8Array(metaBuf)));
+
+      setProgress(12);
+      const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
+      builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
+      $("countText").textContent = String(builtRecipes.length);
+
+      setStatus("Loading embeddings...", "Downloading vector data.");
+      setProgress(45);
+      const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}`, 45, 50);
+      if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
+        throw new Error("Embeddings file too small or missing.");
+      }
+      const aligned = new ArrayBuffer(embBuf.byteLength);
+      new Uint8Array(aligned).set(new Uint8Array(embBuf));
+      builtVectors = new Float32Array(aligned);
+
+      setProgress(100);
+      setStatus("Ready", `${builtMeta.count.toLocaleString()} recipes loaded. Type a query and press Search.`);
+      $("statusDot").classList.add("ok");
+      $("statusDot2").classList.add("ok");
+      $("statusDot").title = "Dataset loaded";
+      setTimeout(() => setProgress(0), 400);
+
+    } catch(e) {
+      console.error("[init] failed:", e);
+      builtVectors = null; builtRecipes = []; builtMeta = null;
+      setProgress(0);
+      setStatus("Init failed", String(e?.message || e));
+      $("statusDot").classList.add("err");
+      $("statusDot2").classList.add("err");
+    }
+  }
+
+  /* ══════════════════════════════════════════════
+     SEARCH — returns ranked list, supports Next
+  ══════════════════════════════════════════════ */
+  let selectedBuilt = null;
+  let searchResults = [];  // ranked array of { recipe, score, isMine? }
+  let searchIdx = 0;       // current position in results
+
+  function showCurrentResult() {
+    if (!searchResults.length) {
+      $("resultCard").classList.add("hidden");
+      setStatus("No match", "Try a different query or adjust filters.");
+      return;
+    }
+    const item = searchResults[searchIdx];
+    showResult(item.recipe, item.score);
+    $("rResultNum").textContent = `#${searchIdx + 1} of ${searchResults.length}`;
+    $("btnNext").style.display = searchResults.length > 1 ? "" : "none";
+    const src = item.isMine ? "your recipes" : "built-in";
+    setStatus("Found", `Result ${searchIdx + 1}/${searchResults.length} from ${src}. ${Math.round(item.score * 100)}% relevance.`);
+  }
+
+  async function doSearch() {
+    const query = $("q").value.trim();
+    if (!query) { setStatus("Ready", "Type what you want to cook."); return; }
+    if (!builtVectors || !builtRecipes.length) {
+      setStatus("Not ready", "Dataset is still loading. Please wait.");
+      return;
+    }
+
+    $("btnSearch").disabled = true;
+    try {
+      setStatus("Searching...", "Embedding your query.");
+      setProgress(10);
+      const qv = await embedText(query);
+      setProgress(40);
+
+      const tagFilter = ($("tagFilter")?.value || "").trim().toLowerCase();
+      const diet = getDietState();
+      const requireInst = !!$("filterHasInstructions").checked;
+      const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+      setStatus("Searching...", "Scanning all recipes.");
+      setProgress(60);
+
+      const builtResults = bruteForceSearchRanked(qv, queryWords, diet, tagFilter, requireInst, 50);
+
+      // also scan user's own recipes
+      let myHits = [];
+      if (myRecipes.length) {
+        for (const r of myRecipes) {
+          if (!r.embedding_b64) continue;
+          if (requireInst && !(r.steps && r.steps.trim().length > 10)) continue;
+          const bad = violatesDiet({ ...r, instructions: r.steps }, diet);
+          if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && bad) continue;
+          const rv = base64ToFloat(r.embedding_b64);
+          let s = cosine(qv, rv);
+          // keyword boost for my recipes too
+          if (queryWords.length) {
+            const tl = (r.title||"").toLowerCase();
+            let th = 0;
+            for (const w of queryWords) { if (tl.includes(w)) th++; }
+            s += (th / queryWords.length) * 0.25;
+          }
+          if (diet.enabled && diet.preset !== "none" && diet.strictness === "soft" && bad) s -= 0.05;
+          myHits.push({ recipe: r, score: s, isMine: true });
+        }
+      }
+
+      setProgress(90);
+
+      // merge and sort
+      searchResults = [...myHits, ...builtResults].sort((a, b) => b.score - a.score).slice(0, 50);
+      searchIdx = 0;
+      showCurrentResult();
+      setProgress(0);
+
+    } catch(e) {
+      console.error(e);
+      setProgress(0);
+      setStatus("Search failed", String(e?.message || e));
+    } finally {
+      $("btnSearch").disabled = false;
+    }
+  }
+
+  function showNext() {
+    if (!searchResults.length) return;
+    searchIdx = (searchIdx + 1) % searchResults.length;
+    showCurrentResult();
+  }
+
+  $("btnSearch").addEventListener("click", doSearch);
+  $("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+  $("btnNext").addEventListener("click", showNext);
+
+  /* ══════════════════════════════════════════════
+     USER DATA STATE
+  ══════════════════════════════════════════════ */
+  let myRecipes = [];
+  let planItems = [];
+  let shopItems = [];
+  let selectedMyId = null;
+
+  async function refreshUserState() {
+    myRecipes = await idbAll(STORE_RECIPES);
+    planItems = await idbAll(STORE_PLAN);
+    shopItems = await idbAll(STORE_SHOP);
+    renderMineList();
+    renderPlanList();
+    renderShopList();
+  }
+
+  /* ── Save built-in to My Recipes ───────────── */
+  async function saveBuiltAsMine() {
+    if (!selectedBuilt) { alert("Search for a recipe first."); return; }
+    const r = selectedBuilt;
+    const mine = {
+      id: uid(), title: r.title || "", tags: r.tags || [], time: r.time || "",
+      ingredients: r.ingredients || "", steps: r.instructions || "",
+      notes: r.url ? `Source: ${r.url}` : "",
+      updatedAt: Date.now(), embedding_b64: null, embedding_dim: null
+    };
+    try {
+      setStatus("Saving...", "Computing embedding for your copy.");
+      const vec = await embedText(myRecipeToEmbedText(mine));
+      mine.embedding_b64 = floatToBase64(vec);
+      mine.embedding_dim = vec.length;
+      await idbPut(STORE_RECIPES, mine);
+      await refreshUserState();
+      setStatus("Saved", "Recipe added to My Recipes.");
+      setTab("MyRecipes");
+      loadMineIntoEditor(mine.id);
+    } catch(e) {
+      console.error(e);
+      setStatus("Save failed", String(e?.message||e));
+    }
+  }
+  $("btnSaveAsMine").addEventListener("click", saveBuiltAsMine);
+
+  /* ══════════════════════════════════════════════
+     PLANNER
+  ══════════════════════════════════════════════ */
+  function getRecipeByTitle(title) {
+    const t = (title||"").trim().toLowerCase();
+    if (!t) return null;
+    const mine = myRecipes.find(r => (r.title||"").trim().toLowerCase() === t);
+    if (mine) return { kind: "mine", recipe: mine };
+    const built = builtRecipes.find(r => (r.title||"").trim().toLowerCase() === t);
+    if (built) return { kind: "built", recipe: built };
+    return null;
+  }
+
+  $("btnAddToPlan").addEventListener("click", () => {
+    const title = $("rTitle").textContent.trim();
+    if (!title) { alert("Search for a recipe first."); return; }
+    $("pPick").value = title;
+    setTab("Planner");
+  });
+
+  async function addPlanItem() {
+    const date = $("pDate").value || todayISO();
+    const meal = ($("pMeal").value||"").trim();
+    const servings = parseInt($("pServings").value,10)||1;
+    const pick = $("pPick").value.trim();
+    const found = getRecipeByTitle(pick);
+    if (!found) { $("planStatus").textContent = "Recipe not found by title."; return; }
+    const plan = {
+      id: uid(), date, meal, servings, kind: found.kind,
+      recipeId: found.kind==="mine" ? found.recipe.id : (found.recipe.id||null),
+      title: found.recipe.title || pick, updatedAt: Date.now(),
+    };
+    await idbPut(STORE_PLAN, plan);
+    planItems.push(plan);
+    renderPlanList();
+    $("planStatus").textContent = "Added.";
+    await rebuildShoppingList();
+  }
+  $("btnPlanAdd").addEventListener("click", addPlanItem);
+  $("pDate").value = todayISO();
+
+  function renderPlanList() {
+    const root = $("planList"); root.innerHTML = "";
+    if (!planItems.length) { root.innerHTML = '<div class="small" style="padding:8px">No items yet.</div>'; return; }
+    const sorted = [...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
+    for (const p of sorted) {
+      const el = document.createElement("div"); el.className = "list-item";
+      const left = document.createElement("div");
+      left.innerHTML = `<h3>${esc(p.title)}</h3><div class="meta">${esc(p.date)} &bull; ${esc(p.meal)} &bull; ${p.servings} servings</div>`;
+      const btns = document.createElement("div"); btns.style.display="flex"; btns.style.gap="6px";
+      const bDel = document.createElement("button"); bDel.className="btn btn-danger btn-sm"; bDel.textContent="Remove";
+      bDel.onclick = async () => { await idbDel(STORE_PLAN, p.id); planItems = planItems.filter(x=>x.id!==p.id); renderPlanList(); await rebuildShoppingList(); };
+      btns.appendChild(bDel);
+      el.appendChild(left); el.appendChild(btns);
+      root.appendChild(el);
+    }
+  }
+
+  /* ══════════════════════════════════════════════
+     SHOPPING LIST
+  ══════════════════════════════════════════════ */
+  function parseIngredientsLines(text) { return (text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,2000); }
+  function normalizeIngredientLine(line) { return line.replace(/\s+/g," ").replace(/^[-•*]\s*/,"").trim(); }
+
+  async function rebuildShoppingList() {
+    const manual = shopItems.filter(x => x.origin === "manual");
+    const map = new Map();
+    for (const p of planItems) {
+      const r = p.kind==="mine" ? myRecipes.find(x=>x.id===p.recipeId) : builtRecipes.find(x=>(x.title||"")===p.title);
+      if (!r) continue;
+      const lines = parseIngredientsLines(r.ingredients||"");
+      for (const raw of lines) {
+        const line = normalizeIngredientLine(raw); if (!line) continue;
+        const key = line.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, { id: uid(), text: line, checked: false, origin: "plan", sources: [{ date: p.date, meal: p.meal, title: p.title }] });
+        } else {
+          map.get(key).sources.push({ date: p.date, meal: p.meal, title: p.title });
+        }
+      }
+    }
+    shopItems = [...map.values(), ...manual];
+    await idbClear(STORE_SHOP);
+    for (const it of shopItems) await idbPut(STORE_SHOP, it);
+    renderShopList();
+  }
+  $("btnRebuildShop").addEventListener("click", rebuildShoppingList);
+
+  function renderShopList() {
+    const root = $("shopList"); root.innerHTML = "";
+    if (!shopItems.length) { root.innerHTML = '<div class="small" style="padding:8px">No items.</div>'; return; }
+    const sorted = [...shopItems].sort((a,b) => Number(a.checked)-Number(b.checked));
+    for (const it of sorted) {
+      const row = document.createElement("div"); row.className = "check-row";
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=!!it.checked;
+      cb.onchange = async () => { it.checked=cb.checked; await idbPut(STORE_SHOP, it); renderShopList(); };
+      const txt = document.createElement("div"); txt.className="text";
+      const t = document.createElement("div"); t.style.fontWeight="700"; t.className=it.checked?"strike":""; t.textContent=it.text;
+      const m = document.createElement("div"); m.className="small"; m.textContent = it.origin==="plan" ? `From plan (${it.sources?.length||1} recipe(s))` : "Manual";
+      txt.appendChild(t); txt.appendChild(m);
+      const actions = document.createElement("div"); actions.style.display="flex"; actions.style.gap="4px";
+      const bEdit = document.createElement("button"); bEdit.className="btn btn-ghost btn-sm"; bEdit.textContent="Edit";
+      bEdit.onclick = async () => { const v=prompt("Edit:",it.text); if(v===null) return; it.text=normalizeIngredientLine(v); await idbPut(STORE_SHOP, it); renderShopList(); };
+      const bDel = document.createElement("button"); bDel.className="btn btn-danger btn-sm"; bDel.textContent="Del";
+      bDel.onclick = async () => { await idbDel(STORE_SHOP, it.id); shopItems=shopItems.filter(x=>x.id!==it.id); renderShopList(); };
+      actions.appendChild(bEdit); actions.appendChild(bDel);
+      row.appendChild(cb); row.appendChild(txt); row.appendChild(actions);
+      root.appendChild(row);
+    }
+  }
+  $("btnShopAdd").addEventListener("click", async () => {
+    const raw=$("shopNew").value.trim(); if(!raw) return;
+    const it = { id:uid(), text:normalizeIngredientLine(raw), checked:false, origin:"manual", sources:[] };
+    await idbPut(STORE_SHOP, it); shopItems.push(it); $("shopNew").value=""; renderShopList();
+  });
+  $("shopNew").addEventListener("keydown", e => { if(e.key==="Enter"){e.preventDefault(); $("btnShopAdd").click();} });
+  $("btnShopClearDone").addEventListener("click", async () => {
+    const rem=shopItems.filter(x=>!x.checked); await idbClear(STORE_SHOP);
+    for(const it of rem) await idbPut(STORE_SHOP, it); shopItems=rem; renderShopList();
+  });
+  $("btnShopWipe").addEventListener("click", async () => {
+    if(!confirm("Wipe shopping list?")) return; await idbClear(STORE_SHOP); shopItems=[]; renderShopList();
+  });
+
+  /* ══════════════════════════════════════════════
+     MY RECIPES CRUD
+  ══════════════════════════════════════════════ */
+  function normalizeTags(s) { return (s||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,20); }
+
+  function renderMineList() {
+    const root=$("mineList"); root.innerHTML="";
+    const q=($("mineSearch").value||"").trim().toLowerCase();
+    const items = myRecipes
+      .filter(r => !q || [r.title,(r.tags||[]).join(" "),r.ingredients,r.steps].filter(Boolean).join("\n").toLowerCase().includes(q))
+      .sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    if (!items.length) { root.innerHTML='<div class="small" style="padding:8px">No recipes yet.</div>'; return; }
+    for (const r of items) {
+      const el=document.createElement("div"); el.className="list-item";
+      el.innerHTML = `<div><h3>${esc(r.title||"(untitled)")}</h3><div class="meta">${(r.tags||[]).slice(0,4).map(esc).join(", ")||"—"}</div></div>`;
+      el.onclick = () => loadMineIntoEditor(r.id);
+      root.appendChild(el);
+    }
+  }
+  $("mineSearch").addEventListener("input", renderMineList);
+
+  function clearMineEditor() {
+    selectedMyId=null;
+    $("mTitle").value=""; $("mTags").value=""; $("mTime").value="";
+    $("mIngredients").value=""; $("mSteps").value=""; $("mNotes").value="";
+  }
+  function loadMineIntoEditor(id) {
+    const r=myRecipes.find(x=>x.id===id); if(!r) return;
+    selectedMyId=id;
+    $("mTitle").value=r.title||""; $("mTags").value=(r.tags||[]).join(", ");
+    $("mTime").value=r.time||""; $("mIngredients").value=r.ingredients||"";
+    $("mSteps").value=r.steps||""; $("mNotes").value=r.notes||"";
+  }
+  $("btnNewMine").addEventListener("click", () => { clearMineEditor(); $("mTitle").focus(); });
+  $("btnClearMine").addEventListener("click", clearMineEditor);
+  $("btnSaveMine").addEventListener("click", async () => {
+    const title=$("mTitle").value.trim(), tags=normalizeTags($("mTags").value), time=$("mTime").value.trim();
+    const ingredients=$("mIngredients").value.trim(), steps=$("mSteps").value.trim(), notes=$("mNotes").value.trim();
+    if (!title && !ingredients && !steps) return alert("Add at least a title.");
+    const id=selectedMyId||uid();
+    const rec = { id, title, tags, time, ingredients, steps, notes, updatedAt:Date.now(), embedding_b64:null, embedding_dim:null };
+    try {
+      const vec = await embedText(myRecipeToEmbedText(rec));
+      rec.embedding_b64 = floatToBase64(vec); rec.embedding_dim = vec.length;
+      await idbPut(STORE_RECIPES, rec); await refreshUserState(); selectedMyId=id; alert("Saved.");
+    } catch(e) { console.error(e); alert("Save failed: "+(e?.message||e)); }
+  });
+  $("btnDeleteMine").addEventListener("click", async () => {
+    if (!selectedMyId) return alert("Select a recipe first.");
+    if (!confirm("Delete this recipe?")) return;
+    await idbDel(STORE_RECIPES, selectedMyId); selectedMyId=null; await refreshUserState(); clearMineEditor();
+  });
+
+  /* ══════════════════════════════════════════════
+     EXPORTS
+  ══════════════════════════════════════════════ */
+  function downloadBlob(blob, fn) { const u=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=u; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u); }
+  function toCSV(rows) { const e=v=>{const s=String(v??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}; return rows.map(r=>r.map(e).join(",")).join("\n"); }
+
+  function exportMyRecipesCSV() {
+    const rows=[["title","tags","time","ingredients","instructions","notes","updatedAt"]];
+    for(const r of myRecipes) rows.push([r.title||"",(r.tags||[]).join("; "),r.time||"",r.ingredients||"",r.steps||"",r.notes||"",r.updatedAt?new Date(r.updatedAt).toISOString():""]);
+    downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `my_recipes_${todayISO()}.csv`);
+  }
+  function exportPlanCSV() {
+    const rows=[["date","meal","servings","title","kind"]];
+    for(const p of [...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal))) rows.push([p.date,p.meal,p.servings,p.title,p.kind]);
+    downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `meal_plan_${todayISO()}.csv`);
+  }
+  function exportShopCSV() {
+    const rows=[["item","checked","origin"]];
+    for(const it of shopItems) rows.push([it.text,it.checked?"true":"false",it.origin]);
+    downloadBlob(new Blob([toCSV(rows)],{type:"text/csv"}), `shopping_list_${todayISO()}.csv`);
+  }
+  function pdfExport(title,lines,fn) {
+    const{jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"letter"});
+    const m=48; let y=m; doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.text(title,m,y); y+=18;
+    doc.setFont("helvetica","normal"); doc.setFontSize(11);
+    for(const l of lines){const s=doc.splitTextToSize(l,612-m*2);for(const t of s){if(y>760){doc.addPage();y=m;}doc.text(t,m,y);y+=14;}y+=4;}
+    doc.save(fn);
+  }
+  function exportMyRecipesPDF() {
+    const l=[]; for(const r of myRecipes){l.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]`); if(r.ingredients) l.push("Ingredients:",r.ingredients); if(r.steps) l.push("Instructions:",r.steps); l.push("—");}
+    pdfExport("My Recipes",l,`my_recipes_${todayISO()}.pdf`);
+  }
+  function exportPlanPDF() {
+    const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
+    pdfExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.pdf`);
+  }
+  function exportShopPDF() {
+    pdfExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.pdf`);
+  }
+  async function docxExport(title,paras,fn) {
+    const{Document,Packer,Paragraph,TextRun}=window.docx;
+    const doc=new Document({sections:[{children:[new Paragraph({children:[new TextRun({text:title,bold:true,size:32})]}), ...paras.map(t=>new Paragraph(t))]}]});
+    downloadBlob(await Packer.toBlob(doc),fn);
+  }
+  async function exportMyRecipesDOCX() {
+    const p=[]; for(const r of myRecipes){p.push(`• ${r.title||"(untitled)"}  [${(r.tags||[]).join(", ")}]`); if(r.ingredients){p.push("Ingredients:");p.push(r.ingredients);} if(r.steps){p.push("Instructions:");p.push(r.steps);} p.push("—");}
+    await docxExport("My Recipes",p.length?p:["(empty)"],`my_recipes_${todayISO()}.docx`);
+  }
+  async function exportPlanDOCX() {
+    const s=[...planItems].sort((a,b)=>(a.date+a.meal).localeCompare(b.date+b.meal));
+    await docxExport("Meal Plan",s.map(p=>`${p.date} • ${p.meal} • ${p.servings} servings • ${p.title}`),`meal_plan_${todayISO()}.docx`);
+  }
+  async function exportShopDOCX() {
+    await docxExport("Shopping List",shopItems.map(it=>`${it.checked?"[x]":"[ ]"} ${it.text}`),`shopping_list_${todayISO()}.docx`);
+  }
+
+  $("btnExportMineCSV").addEventListener("click", exportMyRecipesCSV);
+  $("btnExportMinePDF").addEventListener("click", exportMyRecipesPDF);
+  $("btnExportMineDOCX").addEventListener("click", exportMyRecipesDOCX);
+  $("btnPlanExportCSV").addEventListener("click", exportPlanCSV);
+  $("btnPlanExportPDF").addEventListener("click", exportPlanPDF);
+  $("btnPlanExportDOCX").addEventListener("click", exportPlanDOCX);
+  $("btnShopExportCSV").addEventListener("click", exportShopCSV);
+  $("btnShopExportPDF").addEventListener("click", exportShopPDF);
+  $("btnShopExportDOCX").addEventListener("click", exportShopDOCX);
+
+  /* ══════════════════════════════════════════════
+     IMPORT / EXPORT ALL / WIPE
+  ══════════════════════════════════════════════ */
+  function exportAllJSON() {
+    const payload = { app:"quick-recipes", version:1, exportedAt:new Date().toISOString(), myRecipes, planItems, shopItems };
+    downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}), `recipe_data_${todayISO()}.json`);
+  }
+  async function importAllJSON(file) {
+    const text = await file.text(); let data;
+    try { data = JSON.parse(text); } catch { throw new Error("Invalid JSON."); }
+    if (!data || !Array.isArray(data.myRecipes) || !Array.isArray(data.planItems) || !Array.isArray(data.shopItems))
+      throw new Error("Missing myRecipes/planItems/shopItems.");
+    await idbClear(STORE_RECIPES); await idbClear(STORE_PLAN); await idbClear(STORE_SHOP);
+    for (const r of data.myRecipes) await idbPut(STORE_RECIPES, r);
+    for (const p of data.planItems) await idbPut(STORE_PLAN, p);
+    for (const s of data.shopItems) await idbPut(STORE_SHOP, s);
+    await refreshUserState(); alert("Imported.");
+  }
+  $("btnExportAll").addEventListener("click", exportAllJSON);
+  $("btnImportAll").addEventListener("click", () => $("filePick").click());
+  $("filePick").addEventListener("change", async e => {
+    const file = e.target.files?.[0]; e.target.value=""; if(!file) return;
+    try { await importAllJSON(file); } catch(err) { console.error(err); alert("Import failed: "+(err?.message||err)); }
+  });
+  $("btnWipeUserData").addEventListener("click", async () => {
+    if (!confirm("Wipe ALL user data?")) return;
+    await idbClear(STORE_RECIPES); await idbClear(STORE_PLAN); await idbClear(STORE_SHOP);
+    await refreshUserState(); clearMineEditor(); alert("Wiped.");
+  });
+
+  /* ══════════════════════════════════════════════
+     STARTUP — auto-init
+  ══════════════════════════════════════════════ */
+  await refreshUserState();
+  $("pDate").value = todayISO();
+  initDataset();
+</script>
+</body>
+</html>
