@@ -1030,6 +1030,13 @@
     for (let i = 0; i < dim; i++) qNorm += queryVec[i] * queryVec[i];
     qNorm = Math.sqrt(qNorm) || 1;
 
+    // Keyword boost scales with query length: short queries need more
+    // keyword help (semantic signal is weak for 1 word vs long documents),
+    // longer queries can rely more on the semantic model.
+    const kwTitle = queryWords.length <= 1 ? 0.12 : queryWords.length <= 2 ? 0.06 : 0.03;
+    const kwBody  = queryWords.length <= 1 ? 0.06 : queryWords.length <= 2 ? 0.03 : 0.01;
+    const kwAll   = queryWords.length <= 1 ? 0.04 : 0.02;
+
     const scored = [];
 
     for (let n = 0; n < count; n++) {
@@ -1039,6 +1046,7 @@
       // hard filters
       if (diet.enabled && diet.preset !== "none" && diet.strictness === "strict" && violatesDiet(r, diet)) continue;
       if (tagFilter && !(r.tags || []).join(" ").toLowerCase().includes(tagFilter)) continue;
+
       // cosine similarity
       const off = n * dim;
       let d = 0, vN = 0;
@@ -1048,12 +1056,10 @@
         vN += v * v;
       }
       vN = Math.sqrt(vN) || 1;
-      let score = d / (qNorm * vN);
+      const sem = d / (qNorm * vN);
+      let score = sem;
 
-      // keyword scoring — mild tiebreaker, NOT the primary signal.
-      // The semantic model is the main ranker. Keywords just nudge ties
-      // so "fried potatoes" edges above "french fries", but "french fries"
-      // still beats any recipe with low semantic relevance.
+      // keyword scoring
       if (queryWords.length) {
         const titleLow = (r.title || "").toLowerCase();
         const ingLow = (r.ingredients || "").toLowerCase();
@@ -1065,15 +1071,13 @@
         }
         const totalHits = titleHits + bodyHits;
         if (totalHits === 0) {
-          // No keyword overlap — tiny penalty for high-confidence semantic
-          // matches (trust the model), bigger for low-confidence ones.
-          const penalty = score > 0.50 ? 0.02 : score > 0.35 ? 0.05 : 0.10;
+          // No keyword overlap — small penalty, scaled by semantic confidence.
+          const penalty = sem > 0.45 ? 0.02 : sem > 0.30 ? 0.05 : 0.08;
           score -= penalty;
         } else {
-          // mild tiebreaker boosts
-          score += (titleHits / queryWords.length) * 0.04;
-          score += (bodyHits / queryWords.length) * 0.02;
-          if (totalHits === queryWords.length) score += 0.02;
+          score += (titleHits / queryWords.length) * kwTitle;
+          score += (bodyHits / queryWords.length) * kwBody;
+          if (totalHits === queryWords.length) score += kwAll;
         }
       }
 
@@ -1082,12 +1086,29 @@
         score -= 0.06;
       }
 
-      scored.push({ recipe: r, score });
+      scored.push({ recipe: r, score, sem });
     }
 
-    // sort descending by score, take top N
+    // Hybrid merge: top results by blended score + top pure-semantic results.
+    // This guarantees conceptual matches ("french fries" for "fried potatoes")
+    // always appear, even when keyword-boosted results dominate the ranking.
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, maxResults);
+    const topBlended = scored.slice(0, maxResults - 10);
+    const seen = new Set(topBlended.map(x => x.recipe));
+
+    // Add top pure-semantic matches that aren't already in results
+    scored.sort((a, b) => b.sem - a.sem);
+    for (const item of scored) {
+      if (topBlended.length >= maxResults) break;
+      if (!seen.has(item.recipe)) {
+        topBlended.push(item);
+        seen.add(item.recipe);
+      }
+    }
+
+    // Final sort by blended score
+    topBlended.sort((a, b) => b.score - a.score);
+    return topBlended;
   }
 
   /* ── Ingredient formatting ─────────────────── */
