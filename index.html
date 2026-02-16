@@ -1168,9 +1168,16 @@
     datasetLoading = true;
 
     try {
-      setStatus("Loading recipes...", "Downloading recipe list (cached after first load).");
+      setStatus("Loading recipes...", "Downloading recipe data...");
       setProgress(5);
       await yieldToBrowser();
+
+      // On mobile, nuke old IndexedDB asset cache first — previous versions cached
+      // up to 43 MB of stale data that iOS counts against our memory budget.
+      if (isMobile) {
+        try { indexedDB.deleteDatabase(ASSET_DB); } catch(e) { /* ignore */ }
+        await yieldToBrowser();
+      }
 
       // Always fetch meta fresh (tiny file) — its buildId drives cache keys for the big files
       const metaRes = await fetch("assets/dataset_meta.json");
@@ -1178,7 +1185,7 @@
       builtMeta = await metaRes.json();
       await yieldToBrowser();
 
-      // Clean up stale cache entries from old builds (desktop only, mobile skips IDB cache)
+      // Clean up stale cache entries from old builds (desktop only)
       if (!isMobile) {
         try {
           const db = await openAssetDB();
@@ -1193,34 +1200,63 @@
       }
 
       setProgress(12);
-      const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
-      builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
-      $("countText").textContent = String(builtRecipes.length);
-      await yieldToBrowser();
 
-      setStatus("Loading embeddings...", "Downloading search vectors.");
-      setProgress(45);
-      await yieldToBrowser();
+      if (isMobile) {
+        // ── MOBILE: lean path using native APIs to minimize peak memory ──
+        // response.json() is far more efficient than downloading a buffer,
+        // decoding to string, then JSON.parse (avoids 2x copies).
+        setStatus("Loading recipes...", "Downloading recipe list...");
+        const recipesRes = await fetch("assets/recipes.json");
+        if (!recipesRes.ok) throw new Error("Could not load recipes.json");
+        builtRecipes = await recipesRes.json();
+        $("countText").textContent = String(builtRecipes.length);
+        setProgress(35);
+        await yieldToBrowser();
 
-      const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}`, 45, 50);
-      if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
-        throw new Error("Embeddings file too small or missing.");
-      }
-      await yieldToBrowser();
+        setStatus("Loading embeddings...", "Downloading search vectors...");
+        const embRes = await fetch("assets/embeddings.bin");
+        if (!embRes.ok) throw new Error("Could not load embeddings.bin");
+        const embBuf = await embRes.arrayBuffer();
+        setProgress(65);
+        await yieldToBrowser();
 
-      // Create Float32Array — use the buffer directly if aligned, otherwise copy
-      if (embBuf.byteLength % 4 === 0 && embBuf instanceof ArrayBuffer) {
-        try { builtVectors = new Float32Array(embBuf); } catch(e) {
+        if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
+          throw new Error("Embeddings file too small or missing.");
+        }
+        // View directly — no copy needed since we own the buffer
+        builtVectors = new Float32Array(embBuf);
+        await yieldToBrowser();
+      } else {
+        // ── DESKTOP: use cached fetch with progress tracking ──
+        const recipesBuf = await fetchOrCache("assets/recipes.json", `recipes_${builtMeta.buildId}`, 12, 30);
+        builtRecipes = JSON.parse(new TextDecoder().decode(new Uint8Array(recipesBuf)));
+        $("countText").textContent = String(builtRecipes.length);
+        await yieldToBrowser();
+
+        setStatus("Loading embeddings...", "Downloading search vectors.");
+        setProgress(45);
+        await yieldToBrowser();
+
+        const embBuf = await fetchOrCache("assets/embeddings.bin", `emb_${builtMeta.buildId}`, 45, 50);
+        if (!embBuf || embBuf.byteLength < builtMeta.count * builtMeta.dim * 4) {
+          throw new Error("Embeddings file too small or missing.");
+        }
+        await yieldToBrowser();
+
+        // Create Float32Array — use the buffer directly if aligned, otherwise copy
+        if (embBuf.byteLength % 4 === 0 && embBuf instanceof ArrayBuffer) {
+          try { builtVectors = new Float32Array(embBuf); } catch(e) {
+            const aligned = new ArrayBuffer(embBuf.byteLength);
+            new Uint8Array(aligned).set(new Uint8Array(embBuf));
+            builtVectors = new Float32Array(aligned);
+          }
+        } else {
           const aligned = new ArrayBuffer(embBuf.byteLength);
           new Uint8Array(aligned).set(new Uint8Array(embBuf));
           builtVectors = new Float32Array(aligned);
         }
-      } else {
-        const aligned = new ArrayBuffer(embBuf.byteLength);
-        new Uint8Array(aligned).set(new Uint8Array(embBuf));
-        builtVectors = new Float32Array(aligned);
+        await yieldToBrowser();
       }
-      await yieldToBrowser();
 
       setProgress(100);
       setStatus("Ready", `${builtMeta.count.toLocaleString()} recipes loaded. Search away!`);
@@ -1759,7 +1795,13 @@
   ══════════════════════════════════════════════ */
   await refreshUserState();
   $("pDate").value = todayISO();
-  initDataset();
+  // On mobile, give the page time to finish layout/paint before loading data.
+  // This prevents iOS Safari from killing the process during initial render.
+  if (isMobile) {
+    setTimeout(() => initDataset(), 800);
+  } else {
+    initDataset();
+  }
 </script>
 </body>
 </html>
